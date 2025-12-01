@@ -175,24 +175,44 @@
                 <!-- COLUNA DA ESQUERDA (DADOS) -->
                 <div class="left-col">
                     
-                    <!-- CARD DADOS OPERAÇÃO -->
-                    <div class="card">
-                        <div class="card-header">Dados da Operação</div>
-                        <div class="form-row">
-                            <div class="form-col">
-                                <label class="form-label">🏭 Empresa Emitente</label>
-                                <select id="emi-empresa" class="form-select" disabled><option>Carregando...</option></select>
-                            </div>
-                            <div class="form-col">
-                                <label class="form-label">👤 Cliente/Destinatário</label>
-                                <select id="emi-cliente-select" class="form-select"><option value="">Selecione um cliente...</option></select>
-                            </div>
-                        </div>
-                        <div class="form-col">
-                            <label class="form-label">Natureza da Operação</label>
-                            <input type="text" id="emi-natureza" class="form-input" value="VENDA DE MERCADORIA">
-                        </div>
-                    </div>
+<!-- CARD DADOS OPERAÇÃO (ATUALIZADO) -->
+<div class="card">
+    <div class="card-header">Dados da Operação</div>
+    
+    <!-- LINHA 1: Empresa e Modelo da Nota -->
+    <div class="form-row">
+        <div class="form-col">
+            <label class="form-label">🏭 Empresa Emitente</label>
+            <!-- Agora é um input simples que o JS vai preencher com o nome da config -->
+            <input type="text" id="emi-empresa-nome" class="form-input" disabled placeholder="Carregando configurações...">
+        </div>
+        <div class="form-col" style="max-width: 250px;">
+            <label class="form-label">Modelo da Nota</label>
+            <select id="emi-modelo" class="form-select">
+                <option value="55">1. NF-e (Modelo 55)</option>
+                <option value="65">2. NFC-e (Modelo 65)</option>
+                <option value="se">3. NFS-e (Serviços)</option>
+            </select>
+        </div>
+    </div>
+
+    <!-- LINHA 2: Cliente -->
+    <div class="form-row">
+        <div class="form-col">
+            <label class="form-label">👤 Cliente/Destinatário</label>
+            <select id="emi-cliente-select" class="form-select"><option value="">Selecione um cliente...</option></select>
+        </div>
+    </div>
+
+    <!-- LINHA 3: Natureza -->
+    <div class="form-col">
+        <label class="form-label">Natureza da Operação</label>
+        <input type="text" id="emi-natureza" class="form-input" value="VENDA DE MERCADORIA">
+    </div>
+</div>
+					
+					
+					
 
                     <!-- BARRA DE BUSCA PRODUTOS -->
                     <div class="search-area">
@@ -401,13 +421,25 @@
 
                 <div style="border-top: 1px solid #eee; margin: 20px 0;"></div>
 
-                <!-- EMISSÃO E NFC-e (NOVOS CAMPOS) -->
-                <h4 style="color:#059669; margin-bottom:10px;">Parâmetros de Emissão (NF-e / NFC-e)</h4>
-                <div class="form-row">
-                    <div class="form-col"><label class="form-label">Próx. Número NF</label><input type="number" id="conf-prox-numero" class="form-input"></div>
-                    <div class="form-col"><label class="form-label">Série</label><input type="number" id="conf-serie" class="form-input"></div>
-                    <div class="form-col"><label class="form-label">Ambiente</label><select id="conf-ambiente" class="form-select"><option value="2">Homologação</option><option value="1">Produção</option></select></div>
-                </div>
+<!-- EMISSÃO E NFC-e (ATUALIZADO) -->
+<h4 style="color:#059669; margin-bottom:10px;">Parâmetros de Emissão (NF-e / NFC-e)</h4>
+<div class="form-row">
+    <!-- Novo Campo para definir o Padrão -->
+    <div class="form-col">
+        <label class="form-label">Modelo Padrão</label>
+        <select id="conf-modelo-padrao" class="form-select">
+            <option value="55">1. NF-e (Modelo 55)</option>
+            <option value="65">2. NFC-e (Modelo 65)</option>
+            <option value="se">3. NFS-e (Serviços)</option>
+        </select>
+    </div>
+    <div class="form-col"><label class="form-label">Próx. Número NF</label><input type="number" id="conf-prox-numero" class="form-input"></div>
+    <div class="form-col"><label class="form-label">Série</label><input type="number" id="conf-serie" class="form-input"></div>
+    <div class="form-col"><label class="form-label">Ambiente</label><select id="conf-ambiente" class="form-select"><option value="2">Homologação</option><option value="1">Produção</option></select></div>
+</div>
+				
+				
+				
                 
                 <div class="form-row">
                     <div class="form-col" style="max-width: 150px;">
@@ -419,6 +451,8 @@
                         <input type="text" id="conf-csc-code" class="form-input" placeholder="Código alfanumérico fornecido pela SEFAZ">
                     </div>
                 </div>
+				
+				
 
                 <div style="border-top: 1px solid #eee; margin: 20px 0;"></div>
 
@@ -587,6 +621,7 @@ const firebaseConfig = {
         document.getElementById('val-desconto-global').value = 0;
         document.getElementById('val-outras').value = 0;
         document.getElementById('emi-inf-cpl').value = "";
+		carregarDadosEmissao(); 
         renderizarCarrinho();
     }
 
@@ -869,48 +904,41 @@ const firebaseConfig = {
 
     // CARREGAR CONFIGURAÇÕES (ATUALIZADO COM CSC E AUTOMAÇÃO)
     // ============================================================
-    async function carregarEmpresa() {
+async function carregarEmpresa() {
         try {
             const doc = await db.collection('config').doc('minha_empresa').get();
             if (doc.exists) {
                 const d = doc.data();
                 
-                // Dados Básicos
+                // ... (códigos existentes de Razão, CNPJ, Endereço mantidos) ...
                 document.getElementById('conf-razao').value = d.razaoSocial || '';
                 document.getElementById('conf-cnpj').value = d.cnpj || '';
                 document.getElementById('conf-ie').value = d.ie || '';
-                
-                // Endereço
                 if(d.endereco) {
                     document.getElementById('conf-logradouro').value = d.endereco.logradouro || '';
                     document.getElementById('conf-numero').value = d.endereco.numero || '';
                 }
 
-                // NF-e / NFC-e e CSC
+                // NF-e / NFC-e (ATUALIZADO)
                 if(d.nfe) {
                     document.getElementById('conf-prox-numero').value = d.nfe.proxNumero || '';
                     document.getElementById('conf-serie').value = d.nfe.serie || '';
                     document.getElementById('conf-ambiente').value = d.nfe.ambiente || '2';
-                    
-                    // Novos campos CSC
                     document.getElementById('conf-csc-id').value = d.nfe.cscId || '';
                     document.getElementById('conf-csc-code').value = d.nfe.cscCode || '';
+                    
+                    // NOVO: Carregar Modelo Padrão
+                    document.getElementById('conf-modelo-padrao').value = d.nfe.modeloPadrao || '55';
                 }
 
-                // Automação e Preço
-                if(d.formacaoPreco) {
-                    document.getElementById('conf-markup').value = d.formacaoPreco.markup || '';
-                }
-                
-                // Checkboxes de Automação (Se não existir, assume false)
+                // ... (restante do código: automação, markup) ...
+                if(d.formacaoPreco) document.getElementById('conf-markup').value = d.formacaoPreco.markup || '';
                 if(d.automacao) {
                     document.getElementById('conf-auto-financeiro').checked = d.automacao.lancamentoFinanceiro === true;
                     document.getElementById('conf-auto-estoque').checked = d.automacao.lancamentoEstoque === true;
                 }
             }
-        } catch(e) { 
-            console.error("Erro ao carregar config:", e); 
-        }
+        } catch(e) { console.error("Erro config:", e); }
     }
     // ============================================================
     // 5. MODAIS COMPLETOS (PRODUTO, CLIENTE, FORNECEDOR)
@@ -1496,26 +1524,21 @@ const firebaseConfig = {
             razaoSocial: document.getElementById('conf-razao').value,
             cnpj: document.getElementById('conf-cnpj').value,
             ie: document.getElementById('conf-ie').value,
-            
             endereco: { 
                 logradouro: document.getElementById('conf-logradouro').value, 
                 numero: document.getElementById('conf-numero').value 
             },
-            
             nfe: { 
                 proxNumero: document.getElementById('conf-prox-numero').value, 
                 serie: document.getElementById('conf-serie').value, 
                 ambiente: document.getElementById('conf-ambiente').value,
-                // Novos campos CSC salvos dentro do objeto 'nfe'
                 cscId: document.getElementById('conf-csc-id').value,
-                cscCode: document.getElementById('conf-csc-code').value
+                cscCode: document.getElementById('conf-csc-code').value,
+                
+                // NOVO: Salvar Modelo Padrão
+                modeloPadrao: document.getElementById('conf-modelo-padrao').value
             },
-            
-            formacaoPreco: { 
-                markup: document.getElementById('conf-markup').value 
-            },
-
-            // Novo objeto de automação
+            formacaoPreco: { markup: document.getElementById('conf-markup').value },
             automacao: {
                 lancamentoFinanceiro: document.getElementById('conf-auto-financeiro').checked,
                 lancamentoEstoque: document.getElementById('conf-auto-estoque').checked
@@ -1525,10 +1548,7 @@ const firebaseConfig = {
         try {
             await db.collection('config').doc('minha_empresa').set(dados, { merge: true });
             alert('✅ Configurações salvas com sucesso!');
-        } catch (e) {
-            console.error(e);
-            alert('Erro ao salvar: ' + e.message);
-        }
+        } catch (e) { console.error(e); alert('Erro ao salvar: ' + e.message); }
     }
     function filtrarTabelaVisual(idInput, idTbody) {
         const input = document.getElementById(idInput);
