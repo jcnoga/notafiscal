@@ -266,9 +266,9 @@
 
                         <button class="btn-save" onclick="salvarRascunhoNoFirestore()">💾 Salvar Rascunho</button>
 						<!-- O segredo é o id="btn-enviar-nuvem" -->
-                        <button id="btn-enviar-nuvem" class="btn-send-outline" onclick="enviarParaNuvemFiscal()">
-                         🚀 Enviar para Nuvem Fiscal
-                         </button>
+<button id="btn-enviar-nuvem" class="btn-send-outline" onclick="enviarParaNuvemFiscal()">
+    🚀 Enviar para Nuvem Fiscal
+</button>
 						
                        <!-- <button class="btn-send-outline" onclick="enviarParaNuvemFiscal()">🚀 Enviar para Nuvem Fiscal</button> -->
 					   
@@ -1459,14 +1459,16 @@
 // ============================================================
     // ROTINA CORRIGIDA: ENVIO PARA NUVEM FISCAL
     // ============================================================
-    async function enviarParaNuvemFiscal() {
+async function enviarParaNuvemFiscal() {
+        // Tenta encontrar o botão pelo ID
         const btn = document.getElementById('btn-enviar-nuvem');
-		        if (!btn) {
-            console.error("ERRO: O botão de envio precisa ter id='btn-enviar-nuvem' no HTML.");
-            // Continua a execução sem animação de botão ou para aqui, dependendo da preferência.
-            // Vamos apenas definir um objeto falso para não quebrar o resto do código:
-        }
         
+        // --- PROTEÇÃO ---
+        // Se esqueceu de colocar o ID no HTML, o código avisa no console mas continua o envio
+        if (!btn) {
+            console.warn("AVISO: O botão de envio não tem id='btn-enviar-nuvem'. A animação de carregamento não vai funcionar.");
+        }
+
         // 1. Validação Básica
         if (carrinhoProdutos.length === 0) return alert("Erro: Adicione produtos antes de enviar.");
         if (!document.getElementById('emi-cliente-select').value) return alert("Erro: Selecione um cliente.");
@@ -1475,20 +1477,20 @@
         if (!confirm("Confirmar emissão da NF-e?")) return;
 
         try {
-            // 3. Feedback Visual
-            const txtOriginal = btn.innerHTML;
-            btn.innerHTML = "⏳ Processando...";
-            btn.disabled = true;
+            // 3. Feedback Visual (Só executa se o botão foi encontrado)
+            if (btn) {
+                var txtOriginal = btn.innerHTML; // Salva o texto original
+                btn.innerHTML = "⏳ Processando...";
+                btn.disabled = true;
+            }
 
-            // 4. Gerar JSON (Aguarda a montagem)
+            // 4. Gerar JSON
             console.log("Gerando JSON...");
             const jsonNFe = await gerarJsonNuvemFiscalCompleto();
-            console.log("JSON Gerado:", jsonNFe);
 
             // 5. Chamar Backend
             console.log("Chamando Firebase Functions...");
             const chamarFuncao = firebase.functions().httpsCallable('enviarNotaNuvemFiscal');
-            
             const resultado = await chamarFuncao({ jsonNota: jsonNFe });
             const resp = resultado.data;
 
@@ -1496,7 +1498,6 @@
             console.log("Sucesso:", resp);
             alert(`✅ Nota Enviada!\nID: ${resp.id}\nStatus: ${resp.status}`);
 
-            // Salva no histórico
             await db.collection('notas_emitidas').add({
                 clienteNome: jsonNFe.infNFe.dest.xNome,
                 valores: { totalNota: jsonNFe.infNFe.total.ICMSTot.vNF },
@@ -1505,31 +1506,23 @@
                 status: 'ENVIADA'
             });
 
-            // Limpa e atualiza
             novaNota();
             mudarAba('emitidas');
 
         } catch (error) {
             console.error("ERRO FATAL:", error);
-            
-            // Tratamento de erro detalhado para o usuário
             let mensagem = error.message;
-            if (error.details) {
-                mensagem = error.details; // Erro vindo do backend
-            } else if (error.code === 'functions/not-found') {
-                mensagem = "A função não foi encontrada no servidor. Você fez o 'firebase deploy'?";
-            } else if (error.code === 'functions/unavailable') {
-                mensagem = "Servidor indisponível ou sem internet.";
-            }
-
+            if (error.details) mensagem = error.details;
+            
             alert("❌ Falha no Envio:\n" + mensagem);
         } finally {
-            // 7. Restaura botão
-            if(btn) {
-                btn.innerHTML = "🚀 Enviar para Nuvem Fiscal";
+            // 7. Restaura botão (Só se ele existir)
+            if (btn) {
+                btn.innerHTML = "🚀 Enviar para Nuvem Fiscal"; // Restaura texto fixo
                 btn.disabled = false;
             }
         }
-    }</script>
+    }
+</script>
 </body>
 </html>
