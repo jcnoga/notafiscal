@@ -494,29 +494,17 @@
     };
 
 
-    <script>
-    // --- 1. FIREBASE CONFIG ---
-    const firebaseConfig = {
-      // ... suas configs ...
-    };
     if (!firebase.apps.length) firebase.initializeApp(firebaseConfig);
     const db = firebase.firestore();
     const functions = firebase.functions();
 
-    // ============================================================
-    // 2. ESTADO GLOBAL (VERIFIQUE SE ESTÁ EXATAMENTE ASSIM)
-    // ============================================================
-    let carrinhoProdutos = [];
+    // Estado Global
     let itemEdit = null;
-    let cacheProdutosBusca = [];
-    let itensImportacaoCache = [];
-    
-    // ESTA LINHA É A MAIS IMPORTANTE PARA CORRIGIR O SEU ERRO:
-    var dadosCabecalhoNota = {};   
-    // (Mudei de 'let' para 'var' para evitar problemas de escopo/reinicialização)
+    let carrinhoProdutos = [];
+    let cacheProdutosBusca = []; 
+    let itensImportacaoCache = []; // XML
+    let dadosCabecalhoNota = {};   // XML
 
-    // ============================================================
-    // ... RESTO DO CÓDIGO ...
     // ============================================================
     // 2. NAVEGAÇÃO E UI
     // ============================================================
@@ -1238,103 +1226,42 @@
         renderizarModalRevisao(); 
     }
 
- // ============================================================
-    // CORREÇÃO: SALVAR NOTA + PRODUTOS + FORNECEDOR
-    // ============================================================
     async function concluirImportacaoComCalculos() {
-        const btn = document.querySelector('#modal-xml-review button[class*="btn-save"]');
-        if(btn) { btn.innerText = "Salvando..."; btn.disabled = true; }
-
+        const btn = document.querySelector('#modal-xml-review button[onclick^="concluir"]');
+        btn.innerText = "Salvando..."; btn.disabled = true;
         try {
             const batch = db.batch();
-            
-            // 1. SALVAR O FORNECEDOR (NOVO)
-            // Usa o CNPJ (apenas números) como ID para evitar duplicidade
-            const cnpjForn = dadosCabecalhoNota.fornecedor.doc.replace(/\D/g, '');
-            if (cnpjForn) {
-                const fornRef = db.collection('fornecedores').doc(cnpjForn);
-                batch.set(fornRef, {
-                    razaoSocial: dadosCabecalhoNota.fornecedor.nome,
-                    documento: dadosCabecalhoNota.fornecedor.doc,
-                    // Se tiver endereço no XML seria bom, mas o cabeçalho básico muitas vezes não tem completo
-                    atualizadoEm: new Date().toISOString()
-                }, { merge: true }); // merge: true não apaga dados se já existir
-            }
-
-            // 2. SALVAR A NOTA (HISTÓRICO)
             const notaRef = db.collection('notas_importadas').doc();
-            batch.set(notaRef, { 
-                ...dadosCabecalhoNota, 
-                itens: itensImportacaoCache, 
-                criadoEm: firebase.firestore.FieldValue.serverTimestamp() 
-            });
+            batch.set(notaRef, { ...dadosCabecalhoNota, itens: itensImportacaoCache, criadoEm: firebase.firestore.FieldValue.serverTimestamp() });
 
-            // 3. SALVAR OS PRODUTOS
-            for (const item of itensImportacaoCache) {
+            for(const item of itensImportacaoCache) {
                 let ref = db.collection('produtos').doc();
-                
-                // Tenta achar produto existente pelo código ou EAN
-                let q = await db.collection('produtos').where('codigo', '==', item.codigo).limit(1).get();
-                if (q.empty && item.ean && item.ean !== "SEM GTIN") {
-                    q = await db.collection('produtos').where('ean', '==', item.ean).limit(1).get();
-                }
+                // Tenta achar existente
+                let q = await db.collection('produtos').where('codigo','==',item.codigo).limit(1).get();
+                if(q.empty && item.ean && item.ean !== "SEM GTIN") q = await db.collection('produtos').where('ean','==',item.ean).limit(1).get();
                 
                 let estAtual = 0;
-                if (!q.empty) { 
-                    ref = q.docs[0].ref; 
-                    estAtual = parseFloat(q.docs[0].data().estoque || 0); 
-                }
+                if(!q.empty) { ref = q.docs[0].ref; estAtual = parseFloat(q.docs[0].data().estoque||0); }
 
-                // Pega valor de venda da tela (caso tenha editado)
-                const inputVenda = document.querySelector(`#lista-xml-itens tr:nth-child(${item.idx + 1}) input[onchange*="'venda'"]`);
-                
-                // Recalcula custo final
                 const totExtras = item.extras.frete + item.extras.seguro + item.extras.outras + item.extras.ipi + item.extras.st - item.extras.desconto;
                 const custoUnit = (item.vProd + totExtras) / (item.qCom * item.fator);
-                
-                // Define venda (do input ou calculado)
-                let vendaFinal = 0;
-                if(inputVenda) {
-                    vendaFinal = parseFloat(inputVenda.value);
-                } else {
-                    vendaFinal = custoUnit * (1 + item.markup/100);
-                }
+                const venda = parseFloat(document.getElementById(`cx-venda-${item.idx}`).value);
 
                 batch.set(ref, {
-                    descricao: item.descricao, 
-                    codigo: item.codigo, 
-                    ean: item.ean, 
-                    ncm: item.ncm,
-                    unidade: item.unidadeXml, // Salva a unidade
-                    precoCusto: custoUnit, 
-                    markup: item.markup, 
-                    precoVenda: vendaFinal,
+                    descricao: item.descricao, codigo: item.codigo, ean: item.ean, ncm: item.ncm,
+                    precoCusto: custoUnit, markup: item.markup, precoVenda: venda,
                     estoque: estAtual + (item.qCom * item.fator),
-                    fornecedorNome: dadosCabecalhoNota.fornecedor.nome, // Link com fornecedor
-                    fornecedorDoc: dadosCabecalhoNota.fornecedor.doc,
                     ultimaCompra: new Date().toISOString()
-                }, { merge: true });
+                }, {merge:true});
             }
-
-            // 4. COMMIT (ENVIAR TUDO)
-            console.log("Enviando dados para o Firestore...");
             await batch.commit();
-            
-            alert("✅ Importação Concluída!\nFornecedor, Produtos e Nota salvos.");
-            document.getElementById('modal-xml-review').style.display = 'none';
-            
-            // Atualiza as listas na tela
+            alert("Importado com sucesso!");
+            document.getElementById('modal-xml-review').style.display='none';
             carregarListaNotas();
-            carregarListaProdutos(); 
-            carregarListaFornecedores();
-
-        } catch (e) {
-            console.error("Erro ao salvar:", e);
-            alert("Erro ao salvar no banco: " + e.message);
-        } finally {
-            if(btn) { btn.innerText = "✅ Confirmar Importação"; btn.disabled = false; }
-        }
+        } catch(e) { console.error(e); alert("Erro: "+e.message); }
+        btn.innerText = "✅ Confirmar Importação"; btn.disabled = false;
     }
+
     // ============================================================
     // 8. ZONA DE PERIGO (APAGAR TUDO)
     // ============================================================
