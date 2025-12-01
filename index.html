@@ -1,0 +1,1451 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Sistema de Emissão de Notas Fiscais</title>
+    
+    <!-- Firebase SDKs -->
+    <script src="https://www.gstatic.com/firebasejs/9.6.1/firebase-app-compat.js"></script>
+    <script src="https://www.gstatic.com/firebasejs/9.6.1/firebase-firestore-compat.js"></script>
+    <script src="https://www.gstatic.com/firebasejs/9.6.1/firebase-functions-compat.js"></script>
+
+    <!-- Google Fonts -->
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
+
+    <style>
+        /* --- RESET & GERAL --- */
+        body { font-family: 'Inter', sans-serif; background: #f3f4f6; margin: 0; padding: 0; color: #1f2937; }
+        * { box-sizing: border-box; }
+        
+        .hidden { display: none !important; }
+        
+        /* --- TOP HEADER --- */
+        .app-header { background: white; border-bottom: 1px solid #e5e7eb; padding: 0 20px; height: 60px; display: flex; align-items: center; justify-content: space-between; position: fixed; top: 0; width: 100%; z-index: 1000; }
+        .app-logo { font-weight: 700; font-size: 1.1rem; color: #111827; }
+        .user-nav { display: flex; align-items: center; gap: 15px; }
+        .user-avatar { width: 32px; height: 32px; background: #d1fae5; color: #065f46; border-radius: 50%; display: flex; align-items: center; justify-content: center; font-weight: bold; font-size: 0.9rem; }
+
+        /* --- CONTAINER PRINCIPAL --- */
+        .main-container { max-width: 1400px; margin: 80px auto 20px auto; padding: 0 20px; }
+
+        /* --- TÍTULO DA PÁGINA --- */
+        .page-header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 20px; }
+        .page-title h1 { font-size: 1.5rem; font-weight: 700; margin: 0; color: #111827; }
+        .page-subtitle { color: #6b7280; font-size: 0.9rem; margin-top: 5px; }
+        
+        .btn-group { display: flex; gap: 10px; }
+        .btn-outline { background: white; border: 1px solid #d1d5db; padding: 8px 16px; border-radius: 6px; font-weight: 500; color: #374151; cursor: pointer; transition: 0.2s; font-size: 0.9rem; display: flex; align-items: center; gap: 8px; }
+        .btn-new { background: #2563eb; color: white; border: none; padding: 8px 16px; border-radius: 6px; font-weight: 500; cursor: pointer; }
+        .btn-new:hover { background: #1d4ed8; }
+
+        /* --- LAYOUT GRID (EMISSÃO) --- */
+        .emission-grid { display: grid; grid-template-columns: 1fr 380px; gap: 24px; align-items: start; }
+        
+        /* --- CARDS --- */
+        .card { background: white; border-radius: 8px; box-shadow: 0 1px 3px rgba(0,0,0,0.1); padding: 24px; margin-bottom: 24px; border: 1px solid #e5e7eb; }
+        .card-header { font-size: 1.1rem; font-weight: 600; margin-bottom: 20px; color: #111827; display: flex; justify-content: space-between; align-items: center; }
+        
+        /* --- INPUTS --- */
+        .form-row { display: flex; gap: 20px; margin-bottom: 15px; }
+        .form-col { flex: 1; display: flex; flex-direction: column; }
+        .form-label { font-size: 0.85rem; font-weight: 600; color: #374151; margin-bottom: 6px; }
+        .form-input, .form-select, .form-textarea { 
+            width: 100%; padding: 10px 12px; border: 1px solid #d1d5db; border-radius: 6px; font-size: 0.95rem; color: #111827; transition: 0.2s; background: #fff;
+        }
+        .form-input:focus, .form-select:focus, .form-textarea:focus { outline: none; border-color: #10b981; box-shadow: 0 0 0 3px rgba(16, 185, 129, 0.1); }
+        .form-input:disabled, .form-select:disabled { background: #f3f4f6; color: #6b7280; }
+
+        /* --- BARRA DE BUSCA --- */
+        .search-area { background: #f0fdf4; border: 1px solid #e5e7eb; padding: 4px; border-radius: 8px; display: flex; align-items: center; margin-bottom: 24px; }
+        .barcode-icon { padding: 0 15px; color: #059669; font-size: 1.2rem; border-right: 1px solid #e5e7eb; height: 30px; display: flex; align-items: center; }
+        .search-input { border: none; background: transparent; flex: 1; padding: 12px; font-size: 0.95rem; outline: none; color: #374151; }
+        .btn-add { background: #059669; color: white; border: none; padding: 8px 20px; border-radius: 6px; font-weight: 600; cursor: pointer; margin-right: 4px; transition: 0.2s; }
+        .btn-add:hover { background: #047857; }
+
+        /* --- TABELA GERAL --- */
+        .table-container { width: 100%; border-collapse: separate; border-spacing: 0; margin-top: 10px; }
+        .table-container th { text-align: left; font-size: 0.8rem; color: #6b7280; font-weight: 600; padding: 12px 0; border-bottom: 1px solid #e5e7eb; text-transform: uppercase; }
+        .table-container td { padding: 16px 0; border-bottom: 1px solid #f3f4f6; vertical-align: middle; font-size: 0.9rem; color: #374151; }
+        
+        .prod-desc { font-weight: 600; color: #111827; display: block; }
+        .prod-code { font-size: 0.75rem; color: #9ca3af; margin-top: 2px; display: block; }
+        
+        .input-qty { width: 60px; text-align: center; padding: 6px; border: 1px solid #d1d5db; border-radius: 4px; }
+        .input-desc-perc { width: 60px; text-align: center; padding: 6px; border: 1px solid #d1d5db; border-radius: 4px; }
+        .text-green { color: #059669; font-weight: 600; }
+        .btn-trash { color: #ef4444; background: #fee2e2; border: none; width: 30px; height: 30px; border-radius: 6px; cursor: pointer; display: flex; align-items: center; justify-content: center; transition: 0.2s; }
+        .btn-trash:hover { background: #fecaca; }
+
+        .btn-dark { background: #111827; color: white; border: none; padding: 8px 16px; border-radius: 6px; font-weight: 500; font-size: 0.85rem; cursor: pointer; display: flex; align-items: center; gap: 6px; }
+        .btn-dark:hover { background: #374151; }
+
+        /* --- SIDEBAR TOTAIS --- */
+        .summary-row { display: flex; justify-content: space-between; margin-bottom: 12px; font-size: 0.9rem; color: #4b5563; }
+        .summary-row.discount { color: #dc2626; }
+        .summary-divider { height: 1px; background: #e5e7eb; margin: 15px 0; }
+        
+        .total-final-row { display: flex; justify-content: space-between; align-items: center; margin-top: 10px; }
+        .total-label { font-weight: 700; font-size: 1.1rem; color: #111827; }
+        .total-value { font-weight: 800; font-size: 1.4rem; color: #059669; }
+
+        .serie-box { background: #f9fafb; border: 1px solid #e5e7eb; padding: 15px; border-radius: 8px; margin: 20px 0; }
+        .serie-label { font-size: 0.75rem; color: #6b7280; display: block; margin-bottom: 4px; }
+        .serie-value { font-weight: 700; font-size: 1rem; color: #111827; }
+        .badge-homolog { background: #fef3c7; color: #d97706; font-size: 0.7rem; padding: 2px 8px; border-radius: 12px; font-weight: 700; margin-top: 5px; display: inline-block; }
+        .badge-status { padding: 3px 8px; border-radius: 4px; font-size: 0.75rem; font-weight: bold; }
+        .bg-rascunho { background: #e5e7eb; color: #374151; }
+        .bg-emitida { background: #d1fae5; color: #065f46; }
+
+        .btn-save { width: 100%; background: #059669; color: white; border: none; padding: 12px; border-radius: 6px; font-weight: 600; font-size: 1rem; cursor: pointer; margin-bottom: 10px; display: flex; align-items: center; justify-content: center; gap: 8px; transition: 0.2s; }
+        .btn-save:hover { background: #047857; }
+        
+        .btn-send-outline { width: 100%; background: white; border: 1px solid #059669; color: #059669; padding: 10px; border-radius: 6px; font-size: 0.9rem; cursor: pointer; display: flex; justify-content: center; align-items: center; gap: 8px; font-weight: 600; }
+        .btn-send-outline:hover { background: #f0fdf4; }
+
+        /* --- NAV TABS --- */
+        .tabs-container { background: white; padding: 10px 20px; border-bottom: 1px solid #e5e7eb; margin-top: 60px; display: flex; gap: 20px; overflow-x: auto; }
+        .nav-link { color: #6b7280; font-weight: 500; cursor: pointer; padding: 8px 0; border-bottom: 2px solid transparent; font-size: 0.95rem; white-space: nowrap; }
+        .nav-link:hover { color: #111827; }
+        .nav-link.active { color: #059669; border-bottom-color: #059669; }
+
+        /* --- MODAL GERAL --- */
+        #modal-overlay {
+            position: fixed; top: 0; left: 0; width: 100%; height: 100%;
+            background: rgba(0,0,0,0.5); z-index: 9999;
+            display: none; justify-content: center; align-items: center; backdrop-filter: blur(2px);
+        }
+        #modal-overlay.mostrar { display: flex !important; }
+        .modal-box { background: white; padding: 30px; width: 800px; border-radius: 12px; box-shadow: 0 20px 25px -5px rgba(0, 0, 0, 0.1); max-height: 90vh; overflow-y: auto; }
+        
+        /* --- MODAL XML REVISÃO --- */
+        #modal-xml-review {
+            position: fixed; top: 0; left: 0; width: 100%; height: 100%;
+            background: rgba(0,0,0,0.5); z-index: 10000;
+            display: none; justify-content: center; align-items: center; backdrop-filter: blur(2px);
+        }
+
+        /* --- TAB CONTENT ANIMATION --- */
+        @keyframes fadeIn { from { opacity: 0; transform: translateY(10px); } to { opacity: 1; transform: translateY(0); } }
+        .tab-content { display: none; animation: fadeIn 0.4s ease-out; }
+        .tab-content.active { display: block; }
+    </style>
+</head>
+<body>
+
+    <!-- CABEÇALHO GLOBAL -->
+    <header class="app-header">
+        <div class="app-logo">Sistema de Emissão de Notas Fiscais</div>
+        <div class="user-nav">
+            <div class="notif-icon">🔔</div>
+            <div class="user-avatar">U</div>
+        </div>
+    </header>
+
+    <!-- NAVEGAÇÃO ENTRE ABAS -->
+    <div class="tabs-container">
+        <div class="nav-link active" onclick="mudarAba('emissao')">Emitir NF-e</div>
+        <div class="nav-link" onclick="mudarAba('emitidas')">Notas Emitidas</div>
+		<div class="nav-link" onclick="mudarAba('rascunhos')">Rascunhos / Pendentes</div>
+        <div class="nav-link" onclick="mudarAba('clientes')">Clientes</div>
+        <div class="nav-link" onclick="mudarAba('produtos')">Produtos</div>
+        <div class="nav-link" onclick="mudarAba('fornecedores')">Fornecedores</div>
+        <div class="nav-link" onclick="mudarAba('notas')">Importações (XML)</div>
+        <div class="nav-link" onclick="mudarAba('config')">Configurações</div>
+    </div>
+
+    <div class="main-container">
+
+        <!-- ================= ABA EMISSÃO NF-E ================= -->
+        <div id="tab-emissao" class="tab-content active">
+            
+            <div class="page-header">
+                <div class="page-title">
+                    <h1>Emitir NF-e</h1>
+                    <div class="page-subtitle">Preencha os dados para emissão da nota fiscal eletrônica</div>
+                </div>
+                <div class="btn-group">
+                    <button class="btn-new" onclick="novaNota()">✨ Nova Nota</button>
+                    <button class="btn-outline" onclick="visualizarJSON()">👁️ Ver JSON</button>
+                </div>
+            </div>
+
+            <div class="emission-grid">
+                
+                <!-- COLUNA DA ESQUERDA (DADOS) -->
+                <div class="left-col">
+                    
+                    <!-- CARD DADOS OPERAÇÃO -->
+                    <div class="card">
+                        <div class="card-header">Dados da Operação</div>
+                        <div class="form-row">
+                            <div class="form-col">
+                                <label class="form-label">🏭 Empresa Emitente</label>
+                                <select id="emi-empresa" class="form-select" disabled><option>Carregando...</option></select>
+                            </div>
+                            <div class="form-col">
+                                <label class="form-label">👤 Cliente/Destinatário</label>
+                                <select id="emi-cliente-select" class="form-select"><option value="">Selecione um cliente...</option></select>
+                            </div>
+                        </div>
+                        <div class="form-col">
+                            <label class="form-label">Natureza da Operação</label>
+                            <input type="text" id="emi-natureza" class="form-input" value="VENDA DE MERCADORIA">
+                        </div>
+                    </div>
+
+                    <!-- BARRA DE BUSCA PRODUTOS -->
+                    <div class="search-area">
+                        <div class="barcode-icon">|||||</div>
+                        <input type="text" id="input-busca-produto" class="search-input" placeholder="Leia o código de barras ou digite o código do produto...">
+                        <button class="btn-add" onclick="abrirModalSelecaoProduto()">Adicionar</button>
+                    </div>
+
+                    <!-- CARD PRODUTOS CARRINHO -->
+                    <div class="card">
+                        <div class="card-header">
+                            <span>📦 Produtos/Serviços (<span id="count-items">0</span>)</span>
+                            <button class="btn-dark" onclick="abrirModalSelecaoProduto()">+ Buscar Produto</button>
+                        </div>
+                        <table class="table-container">
+                            <thead>
+                                <tr>
+                                    <th width="35%">Produto</th>
+                                    <th width="15%">Preço Original</th>
+                                    <th width="10%">Desc. %</th>
+                                    <th width="15%">Preço Final</th>
+                                    <th width="10%">Qtd</th>
+                                    <th width="10%">Total</th>
+                                    <th width="5%"></th>
+                                </tr>
+                            </thead>
+                            <tbody id="lista-carrinho">
+                                <tr><td colspan="7" style="text-align:center; padding:30px; color:#9ca3af;">Nenhum produto adicionado.</td></tr>
+                            </tbody>
+                        </table>
+                    </div>
+
+                    <!-- CARD VALORES ADICIONAIS -->
+                    <div class="card">
+                        <div class="card-header">Valores Adicionais</div>
+                        <div class="form-row">
+                            <div class="form-col"><label class="form-label">Frete</label><input type="number" id="val-frete" class="form-input" value="0" onchange="atualizarTotais()"></div>
+                            <div class="form-col"><label class="form-label">Seguro</label><input type="number" id="val-seguro" class="form-input" value="0" onchange="atualizarTotais()"></div>
+                            <div class="form-col"><label class="form-label">Desconto Geral</label><input type="number" id="val-desconto-global" class="form-input" value="0" onchange="atualizarTotais()"></div>
+                            <div class="form-col"><label class="form-label">Outras Despesas</label><input type="number" id="val-outras" class="form-input" value="0" onchange="atualizarTotais()"></div>
+                        </div>
+                    </div>
+
+                    <div class="card">
+                        <div class="card-header">Informações Complementares</div>
+                        <textarea id="emi-inf-cpl" class="form-textarea" rows="3" placeholder="Informações adicionais..."></textarea>
+                    </div>
+                </div>
+
+                <!-- COLUNA DA DIREITA (TOTAIS) -->
+                <div class="right-col">
+                    <div class="card" style="position: sticky; top: 100px;">
+                        <div class="card-header">🧮 Totais</div>
+                        
+                        <div class="summary-row"><span>Produtos</span> <span id="lbl-total-produtos">R$ 0,00</span></div>
+                        <div class="summary-row"><span>Frete</span> <span id="lbl-total-frete">R$ 0,00</span></div>
+                        <div class="summary-row"><span>Seguro</span> <span id="lbl-total-seguro">R$ 0,00</span></div>
+                        <div class="summary-row"><span>Outras Despesas</span> <span id="lbl-total-outras">R$ 0,00</span></div>
+                        <div class="summary-row discount"><span>Desconto</span> <span id="lbl-total-desconto">- R$ 0,00</span></div>
+                        <div class="summary-divider"></div>
+                        <div class="total-final-row">
+                            <span class="total-label">Total da Nota</span>
+                            <span class="total-value" id="lbl-total-nota">R$ 0,00</span>
+                        </div>
+
+                        <div class="serie-box">
+                            <span class="serie-label">Próxima numeração</span>
+                            <div class="serie-value">Série 1 / Nº <span id="lbl-prox-numero">...</span></div>
+                            <span class="badge-homolog">Homologação</span>
+                        </div>
+
+                        <button class="btn-save" onclick="salvarRascunhoNoFirestore()">💾 Salvar Rascunho</button>
+                        <button class="btn-send-outline" onclick="enviarParaNuvemFiscal()">🚀 Enviar para Nuvem Fiscal</button>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- ================= ABA NOTAS EMITIDAS ================= -->
+        <div id="tab-emitidas" class="tab-content hidden">
+            <div class="card">
+                <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:20px;">
+                    <h2>Notas Emitidas</h2>
+                    <button onclick="carregarNotasEmitidas()" class="btn-dark">🔄 Atualizar</button>
+                </div>
+                <table class="table-container">
+                    <thead><tr><th>Data</th><th>Cliente</th><th>Valor Total</th><th>Status</th><th>Ações</th></tr></thead>
+                    <tbody id="tabela-emitidas-body"><tr><td colspan="5">Carregando...</td></tr></tbody>
+                </table>
+            </div>
+        </div>
+
+        <!-- ================= ABA RASCUNHOS ================= -->
+        <div id="tab-rascunhos" class="tab-content hidden">
+            <div class="card">
+                <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:20px;">
+                    <h2>Notas Pendentes de Envio</h2>
+                    <button onclick="carregarListaRascunhos()" class="btn-dark">🔄 Atualizar</button>
+                </div>
+                <div style="background-color: #fff7ed; border-left: 4px solid #f97316; padding: 10px; margin-bottom: 15px; font-size: 0.9rem; color: #9a3412;">
+                    Notas salvas mas não enviadas. Clique em <b>"✏️ Editar"</b> para carregar.
+                </div>
+                <table class="table-container">
+                    <thead><tr><th>Data Criação</th><th>Cliente</th><th>Valor Total</th><th>Ações</th></tr></thead>
+                    <tbody id="tabela-rascunhos-body"></tbody>
+                </table>
+            </div>
+        </div>
+
+        <!-- ================= ABA CLIENTES ================= -->
+        <div id="tab-clientes" class="tab-content hidden">
+            <div class="card">
+                <div class="card-header" style="flex-wrap: wrap; gap:10px;">
+                    <span>Cadastro de Clientes</span>
+                    <div style="display:flex; gap:10px; align-items:center; flex:1; justify-content:flex-end;">
+                        <input type="text" id="busca-clientes" class="form-input" placeholder="🔍 Buscar..." onkeyup="filtrarTabelaVisual('busca-clientes','tabela-clientes-body')" style="max-width: 300px;">
+                        <button onclick="abrirModal('clientes', null)" class="btn-add">+ Novo</button>
+                        <button onclick="carregarListaClientes()" class="btn-dark">🔄</button>
+                    </div>
+                </div>
+                <table class="table-container">
+                    <thead><tr><th>Nome</th><th>CPF/CNPJ</th><th>Cidade</th><th>Ações</th></tr></thead>
+                    <tbody id="tabela-clientes-body"></tbody>
+                </table>
+            </div>
+        </div>
+
+        <!-- ================= ABA PRODUTOS ================= -->
+       <div id="tab-produtos" class="tab-content hidden">
+            <div class="card">
+                <div class="card-header" style="flex-wrap: wrap; gap:10px;">
+                    <span>Produtos</span>
+                    <div style="display:flex; gap:10px; align-items:center; flex:1; justify-content:flex-end;">
+                        <input type="text" id="busca-produtos" class="form-input" placeholder="🔍 Buscar..." onkeyup="filtrarTabelaVisual('busca-produtos','tabela-produtos-body')" style="max-width: 300px;">
+                        <button onclick="abrirModal('produtos', null)" class="btn-add">+ Novo</button>
+                        <button onclick="carregarListaProdutos()" class="btn-dark">🔄</button>
+                    </div>
+                </div>
+                <table class="table-container">
+                    <thead><tr><th>Cód</th><th>Descrição</th><th>Estoque</th><th>Venda</th><th>Ações</th></tr></thead>
+                    <tbody id="tabela-produtos-body"></tbody>
+                </table>
+            </div>
+        </div>
+
+        <!-- ================= ABA FORNECEDORES ================= -->
+        <div id="tab-fornecedores" class="tab-content hidden">
+            <div class="card">
+                <div class="card-header" style="flex-wrap: wrap; gap:10px;">
+                    <span>Fornecedores</span>
+                    <div style="display:flex; gap:10px; align-items:center; flex:1; justify-content:flex-end;">
+                        <input type="text" id="busca-fornecedores" class="form-input" placeholder="🔍 Buscar..." onkeyup="filtrarTabelaVisual('busca-fornecedores','tabela-fornecedores-body')" style="max-width: 300px;">
+                        <button onclick="abrirModal('fornecedores', null)" class="btn-add">+ Novo</button>
+                        <button onclick="carregarListaFornecedores()" class="btn-dark">🔄</button>
+                    </div>
+                </div>
+                <table class="table-container">
+                    <thead><tr><th>CNPJ</th><th>Razão Social</th><th>Cidade</th><th>Ações</th></tr></thead>
+                    <tbody id="tabela-fornecedores-body"></tbody>
+                </table>
+            </div>
+        </div>
+
+        <!-- ================= ABA IMPORTAÇÕES (XML) ================= -->
+        <div id="tab-notas" class="tab-content hidden">
+            <div class="card">
+                <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:20px;">
+                    <h2>Gerenciar Importações XML</h2>
+                    <div style="display:flex; gap:10px;">
+                        <input type="file" id="input-xml-file" accept=".xml" style="display:none;" onchange="processarArquivoXML(this)">
+                        <button class="btn-new" onclick="document.getElementById('input-xml-file').click()">📂 Importar XML</button>
+                        <button class="btn-dark" onclick="carregarListaNotas()">🔄 Atualizar</button>
+                    </div>
+                </div>
+                <table class="table-container">
+                    <thead><tr><th>Chave</th><th>Fornecedor</th><th>Total</th><th>Data Importação</th><th>Ações</th></tr></thead>
+                    <tbody id="tabela-notas-body"></tbody>
+                </table>
+            </div>
+        </div>
+
+        <!-- ================= ABA CONFIGURAÇÕES ================= -->
+        <div id="tab-config" class="tab-content hidden">
+            <div class="card">
+                <div class="card-header">Configurações da Empresa</div>
+                <div class="form-row">
+                    <div class="form-col"><label class="form-label">Razão Social</label><input type="text" id="conf-razao" class="form-input"></div>
+                </div>
+                <div class="form-row">
+                    <div class="form-col"><label class="form-label">CNPJ</label><input type="text" id="conf-cnpj" class="form-input"></div>
+                    <div class="form-col"><label class="form-label">IE</label><input type="text" id="conf-ie" class="form-input"></div>
+                </div>
+                 <div class="form-row">
+                    <div class="form-col"><label class="form-label">Logradouro</label><input type="text" id="conf-logradouro" class="form-input"></div>
+                    <div class="form-col" style="flex:0 0 100px;"><label class="form-label">Número</label><input type="text" id="conf-numero" class="form-input"></div>
+                </div>
+                <div class="form-row">
+                    <div class="form-col"><label class="form-label">Próx. Número NF</label><input type="number" id="conf-prox-numero" class="form-input"></div>
+                    <div class="form-col"><label class="form-label">Série</label><input type="number" id="conf-serie" class="form-input"></div>
+                    <div class="form-col"><label class="form-label">Ambiente</label><select id="conf-ambiente" class="form-select"><option value="2">Homologação</option><option value="1">Produção</option></select></div>
+                </div>
+                
+                <h4 style="margin: 20px 0 10px 0; border-bottom:1px solid #eee; padding-bottom:5px;">Formação de Preço</h4>
+                <div class="form-row">
+                    <div class="form-col" style="max-width:200px;">
+                        <label class="form-label">Markup Padrão (%)</label>
+                        <input type="number" id="conf-markup" class="form-input" placeholder="Ex: 50">
+                    </div>
+                </div>
+
+                <button class="btn-save" onclick="salvarEmpresa()">💾 Salvar Configurações</button>
+
+                <!-- ZONA DE PERIGO (NOVO) -->
+                <div style="margin-top: 40px; border: 1px solid #fca5a5; background: #fef2f2; padding: 20px; border-radius: 8px;">
+                    <h4 style="margin: 0 0 10px 0; color: #991b1b;">⚠️ Zona de Perigo (Desenvolvimento)</h4>
+                    <p style="font-size: 0.9rem; color: #7f1d1d; margin-bottom: 15px;">Apagar <b>TODOS</b> os produtos. Irreversível.</p>
+                    <button id="btn-del-all" class="btn-trash" style="width: 100%; justify-content: center; background: #dc2626; color: white; height: 45px; font-weight: bold;" onclick="deletarTodosProdutos()">🗑️ Apagar Todo o Catálogo</button>
+                </div>
+            </div>
+        </div>
+
+    </div> <!-- Fim Main Container -->
+
+    <!-- MODAL GERAL CADASTROS (Dinâmico) -->
+    <div id="modal-overlay">
+        <div class="modal-box">
+            <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:20px; border-bottom:1px solid #eee; padding-bottom:10px;">
+                <h3 id="modal-titulo" style="margin:0; font-size:1.2rem;">Título</h3>
+                <button onclick="fecharModal()" style="background:none; border:none; font-size:1.5rem; cursor:pointer;">&times;</button>
+            </div>
+            
+            <div id="modal-campos"></div>
+            
+            <div id="modal-footer" style="text-align:right; margin-top:20px; border-top:1px solid #eee; padding-top:15px;">
+                <button onclick="fecharModal()" style="padding:10px 20px; border:1px solid #ddd; background:white; border-radius:6px; cursor:pointer; margin-right:5px;">Cancelar</button>
+                <button id="btn-salvar-modal" onclick="salvarModal()" style="padding:10px 20px; border:none; background:#059669; color:white; border-radius:6px; cursor:pointer;">Salvar</button>
+            </div>
+        </div>
+    </div>
+
+    <!-- MODAL REVISÃO XML (NOVO) -->
+    <div id="modal-xml-review">
+        <div style="background:white; width:95%; max-width:1400px; height:90vh; border-radius:8px; display:flex; flex-direction:column; padding:20px; box-shadow:0 10px 25px rgba(0,0,0,0.5);">
+            <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:15px;">
+                <div>
+                    <h2 style="margin:0; font-size:1.5rem; color:#111827;">📦 Revisão de Importação e Precificação</h2>
+                    <div style="font-size:0.9rem; color:#6b7280;">Defina as conversões de embalagem para calcular o custo real unitário.</div>
+                </div>
+                <div style="text-align:right;">
+                    <div style="font-size:0.85rem; color:#6b7280;">Valor Total da Nota</div>
+                    <div style="font-size:1.2rem; font-weight:bold; color:#059669;" id="xml-total-nota">R$ 0,00</div>
+                </div>
+            </div>
+
+            <div style="flex:1; overflow-y:auto; border:1px solid #e5e7eb; border-radius:6px;">
+                <table style="width:100%; border-collapse:collapse; font-size:0.85rem;">
+                    <thead style="position:sticky; top:0; background:#f3f4f6; z-index:10;">
+                        <tr>
+                            <th style="padding:10px; text-align:left; border-bottom:2px solid #e5e7eb;">Produto (XML)</th>
+                            <th style="padding:10px; text-align:center; border-bottom:2px solid #e5e7eb;">Qtd XML</th>
+                            <th style="padding:10px; text-align:center; border-bottom:2px solid #e5e7eb; background:#fff7ed; border-left:2px solid #fed7aa;">Fator<br>(Un. p/ Cx)</th>
+                            <th style="padding:10px; text-align:center; border-bottom:2px solid #e5e7eb; background:#fff7ed; border-right:2px solid #fed7aa;">Qtd<br>Estoque</th>
+                            <th style="padding:10px; text-align:right; border-bottom:2px solid #e5e7eb;">Vlr XML<br>(cx)</th>
+                            <th style="padding:10px; text-align:right; border-bottom:2px solid #e5e7eb;">Extras<br>(Impostos/Frete)</th>
+                            <th style="padding:10px; text-align:right; border-bottom:2px solid #e5e7eb; color:#dc2626;">Custo Real<br>(Unitário)</th>
+                            <th style="padding:10px; text-align:center; border-bottom:2px solid #e5e7eb;">Markup %</th>
+                            <th style="padding:10px; text-align:right; border-bottom:2px solid #e5e7eb; color:#059669;">Venda<br>(Sugerida)</th>
+                            <th style="padding:10px; text-align:center; border-bottom:2px solid #e5e7eb;">Ação</th>
+                        </tr>
+                    </thead>
+                    <tbody id="lista-xml-itens"></tbody>
+                </table>
+            </div>
+
+            <div style="margin-top:20px; display:flex; justify-content:flex-end; gap:10px; border-top:1px solid #e5e7eb; padding-top:15px;">
+                <button onclick="document.getElementById('modal-xml-review').style.display='none'" style="padding:10px 20px; border:1px solid #d1d5db; background:white; border-radius:6px; cursor:pointer;">Cancelar</button>
+                <button onclick="concluirImportacaoComCalculos()" style="padding:10px 25px; border:none; background:#059669; color:white; border-radius:6px; font-weight:bold; cursor:pointer;">✅ Confirmar Importação</button>
+            </div>
+        </div>
+    </div>
+
+<script>
+    // ============================================================
+    // 1. CONFIGURAÇÃO FIREBASE
+    // ============================================================
+    const firebaseConfig = {
+      apiKey: "AIzaSyD7wH29Ux2_nsbVn-cEeX9oYPK9iV8lf_o",
+      authDomain: "jcnoga-nfe.firebaseapp.com",
+      projectId: "jcnoga-nfe",
+      storageBucket: "jcnoga-nfe.firebasestorage.app",
+      messagingSenderId: "707495638676",
+      appId: "1:707495638676:web:f5372d1397a331bda32681"
+    };
+
+    if (!firebase.apps.length) firebase.initializeApp(firebaseConfig);
+    const db = firebase.firestore();
+    const functions = firebase.functions();
+
+    // Estado Global
+    let itemEdit = null;
+    let carrinhoProdutos = [];
+    let cacheProdutosBusca = []; 
+    let itensImportacaoCache = []; // XML
+    let dadosCabecalhoNota = {};   // XML
+
+    // ============================================================
+    // 2. NAVEGAÇÃO E UI
+    // ============================================================
+    function mudarAba(aba) {
+        document.querySelectorAll('.tab-content').forEach(e => {
+            e.classList.remove('active');
+            e.classList.add('hidden');
+        });
+        document.querySelectorAll('.nav-link').forEach(e => e.classList.remove('active'));
+        
+        const tabAlvo = document.getElementById('tab-'+aba);
+        if(tabAlvo) {
+            tabAlvo.classList.remove('hidden');
+            tabAlvo.classList.add('active');
+        }
+
+        const links = document.querySelectorAll('.nav-link');
+        const map = ['emissao','emitidas','rascunhos','clientes','produtos','fornecedores','notas','config'];
+        const idx = map.indexOf(aba);
+        if(idx >= 0 && links[idx]) links[idx].classList.add('active');
+        
+        // Hooks de carregamento
+        if(aba=='emissao') { popularSelectClientes(); }
+        if(aba=='emitidas') carregarNotasEmitidas();
+        if(aba=='rascunhos') carregarListaRascunhos();
+        if(aba=='clientes') carregarListaClientes();
+        if(aba=='produtos') carregarListaProdutos();
+        if(aba=='fornecedores') carregarListaFornecedores();
+        if(aba=='notas') carregarListaNotas();
+        if(aba=='config') carregarEmpresa();
+    }
+
+    // ============================================================
+    // 3. LÓGICA DE EMISSÃO & CARRINHO
+    // ============================================================
+    function novaNota() {
+        if(!confirm("Deseja limpar para nova nota?")) return;
+        carrinhoProdutos = [];
+        document.getElementById('emi-cliente-select').value = "";
+        document.getElementById('val-frete').value = 0;
+        document.getElementById('val-seguro').value = 0;
+        document.getElementById('val-desconto-global').value = 0;
+        document.getElementById('val-outras').value = 0;
+        document.getElementById('emi-inf-cpl').value = "";
+        renderizarCarrinho();
+    }
+
+    async function abrirModalSelecaoProduto() {
+        const overlay = document.getElementById('modal-overlay');
+        const content = document.getElementById('modal-campos');
+        const titulo = document.getElementById('modal-titulo');
+        const btnSalvar = document.getElementById('btn-salvar-modal');
+
+        titulo.innerText = "🔍 Buscar e Adicionar Produto";
+        if(btnSalvar) btnSalvar.style.display = 'none';
+
+        content.innerHTML = `
+            <div style="display:flex; gap:10px; margin-bottom:15px; background:#f9fafb; padding:10px; border-radius:6px;">
+                <input type="text" id="modal-search-input" class="form-input" 
+                    placeholder="Digite descrição, código ou EAN..."
+                    style="flex:1;" autocomplete="off">
+                <button onclick="filtrarProdutosNoModal()" class="btn-dark">🔍 Buscar</button>
+            </div>
+            <div id="modal-lista-resultados" style="max-height:400px; overflow-y:auto;">
+                <div style="padding:30px; text-align:center; color:#9ca3af;">Carregando catálogo...</div>
+            </div>
+        `;
+        overlay.classList.add('mostrar');
+        await carregarCatalogoParaMemoria();
+        
+        const inputBusca = document.getElementById('modal-search-input');
+        inputBusca.focus();
+        inputBusca.addEventListener('keyup', (e) => { if(e.key === 'Enter') filtrarProdutosNoModal(); });
+        filtrarProdutosNoModal(); 
+    }
+
+    async function carregarCatalogoParaMemoria() {
+        if(cacheProdutosBusca.length > 0) return;
+        try {
+            const snapshot = await db.collection('produtos').limit(500).get();
+            cacheProdutosBusca = [];
+            snapshot.forEach(doc => {
+                const d = doc.data();
+                cacheProdutosBusca.push({
+                    id: doc.id,
+                    codigo: d.codigo ? String(d.codigo).toLowerCase() : '',
+                    ean: d.ean ? String(d.ean) : '',
+                    descricao: d.descricao ? String(d.descricao).toLowerCase() : '',
+                    dadosOriginais: d
+                });
+            });
+        } catch(e) { console.error("Erro catalogo", e); }
+    }
+
+    function filtrarProdutosNoModal() {
+        const input = document.getElementById('modal-search-input');
+        if(!input) return;
+        const termo = input.value.toLowerCase().trim();
+        const div = document.getElementById('modal-lista-resultados');
+
+        if(cacheProdutosBusca.length === 0) { div.innerHTML = `<div style="padding:20px; text-align:center;">Nenhum produto.</div>`; return; }
+
+        const resultados = cacheProdutosBusca.filter(p => 
+            p.descricao.includes(termo) || p.codigo.includes(termo) || p.ean.includes(termo)
+        );
+
+        if(resultados.length === 0) { div.innerHTML = `<div style="padding:20px;">Sem resultados.</div>`; return; }
+
+        let html = `<table style="width:100%; border-collapse:collapse;">`;
+        resultados.slice(0, 50).forEach(item => {
+            const p = item.dadosOriginais;
+            const preco = parseFloat(p.precoVenda || p.precoCusto || 0).toFixed(2);
+            html += `<tr style="border-bottom:1px solid #eee;">
+                <td style="padding:10px;"><b>${p.descricao}</b><br><small>${p.codigo||''}</small></td>
+                <td style="color:#059669; font-weight:bold;">R$ ${preco}</td>
+                <td><button class="btn-add" style="padding:4px 10px;" onclick="selecionarProdutoBusca('${item.id}')">Add</button></td>
+            </tr>`;
+        });
+        html += `</table>`;
+        div.innerHTML = html;
+    }
+
+    function selecionarProdutoBusca(idProduto) {
+        const itemCache = cacheProdutosBusca.find(p => p.id === idProduto);
+        if (itemCache) {
+            adicionarAoCarrinho({ ...itemCache.dadosOriginais, id: itemCache.id });
+            fecharModal();
+        }
+    }
+
+    function adicionarAoCarrinho(produto) {
+        const existe = carrinhoProdutos.find(p => p.id === produto.id);
+        if(existe) { existe.qtd++; } 
+        else {
+            carrinhoProdutos.push({
+                id: produto.id,
+                codigo: produto.codigo,
+                descricao: produto.descricao,
+                precoOriginal: parseFloat(produto.precoVenda || produto.precoCusto || 0),
+                descontoPorc: 0,
+                qtd: 1
+            });
+        }
+        renderizarCarrinho();
+    }
+
+    function renderizarCarrinho() {
+        const tbody = document.getElementById('lista-carrinho');
+        const countSpan = document.getElementById('count-items');
+        tbody.innerHTML = '';
+        countSpan.innerText = carrinhoProdutos.length;
+
+        if(carrinhoProdutos.length === 0) {
+            tbody.innerHTML = '<tr><td colspan="7" style="text-align:center; padding:30px;">Vazio</td></tr>';
+            atualizarTotais();
+            return;
+        }
+
+        carrinhoProdutos.forEach((item, index) => {
+            const precoFinalUnit = item.precoOriginal * (1 - (item.descontoPorc / 100));
+            const totalLinha = precoFinalUnit * item.qtd;
+
+            tbody.innerHTML += `
+                <tr>
+                    <td><span class="prod-desc">${item.descricao}</span></td>
+                    <td>R$ ${item.precoOriginal.toFixed(2)}</td>
+                    <td><input type="number" class="input-desc-perc" value="${item.descontoPorc}" onchange="atualizarItemCarrinho(${index}, 'desc', this.value)"> %</td>
+                    <td class="text-green">R$ ${precoFinalUnit.toFixed(2)}</td>
+                    <td><input type="number" class="input-qty" value="${item.qtd}" min="1" onchange="atualizarItemCarrinho(${index}, 'qtd', this.value)"></td>
+                    <td style="font-weight:700;">R$ ${totalLinha.toFixed(2)}</td>
+                    <td><button class="btn-trash" onclick="removerDoCarrinho(${index})">🗑</button></td>
+                </tr>`;
+        });
+        atualizarTotais();
+    }
+
+    function atualizarItemCarrinho(index, campo, valor) {
+        const v = parseFloat(valor);
+        if (campo === 'qtd') carrinhoProdutos[index].qtd = v > 0 ? v : 1;
+        if (campo === 'desc') carrinhoProdutos[index].descontoPorc = (v >= 0 && v <= 100) ? v : 0;
+        renderizarCarrinho();
+    }
+
+    function removerDoCarrinho(index) {
+        carrinhoProdutos.splice(index, 1);
+        renderizarCarrinho();
+    }
+    
+    function atualizarTotais() {
+        let totalProd = 0;
+        let totalDescItens = 0;
+
+        carrinhoProdutos.forEach(p => {
+            const originalTotal = p.precoOriginal * p.qtd;
+            const finalTotal = originalTotal * (1 - (p.descontoPorc / 100));
+            totalProd += originalTotal;
+            totalDescItens += (originalTotal - finalTotal);
+        });
+
+        const frete = parseFloat(document.getElementById('val-frete').value) || 0;
+        const seguro = parseFloat(document.getElementById('val-seguro').value) || 0;
+        const outras = parseFloat(document.getElementById('val-outras').value) || 0;
+        const descGlobal = parseFloat(document.getElementById('val-desconto-global').value) || 0;
+
+        const totalDescontos = totalDescItens + descGlobal;
+        const totalNota = (totalProd + frete + seguro + outras) - totalDescontos;
+
+        document.getElementById('lbl-total-produtos').innerText = `R$ ${totalProd.toFixed(2)}`;
+        document.getElementById('lbl-total-nota').innerText = `R$ ${totalNota.toFixed(2)}`;
+    }
+
+    // ============================================================
+    // 4. CARREGAMENTO DE DADOS (LISTAS)
+    // ============================================================
+    async function popularSelectClientes() {
+        const select = document.getElementById('emi-cliente-select');
+        try {
+            const snap = await db.collection('clientes').orderBy('nome').get();
+            select.innerHTML = '<option value="">Selecione um cliente...</option>';
+            snap.forEach(doc => {
+                const c = doc.data();
+                select.innerHTML += `<option value="${c.documento}">${c.nome}</option>`;
+            });
+        } catch(e) { console.error(e); }
+    }
+
+    async function carregarNotasEmitidas() {
+        const tbody = document.getElementById('tabela-emitidas-body');
+        tbody.innerHTML = '<tr><td colspan="5">Carregando...</td></tr>';
+        const s = await db.collection('notas_emitidas').orderBy('dataEmissao', 'desc').limit(20).get();
+        tbody.innerHTML = '';
+        if(s.empty) { tbody.innerHTML = '<tr><td colspan="5">Nenhuma nota emitida.</td></tr>'; return; }
+        s.forEach(doc => {
+            const n = doc.data();
+            const dataF = n.dataEmissao ? new Date(n.dataEmissao.seconds * 1000).toLocaleDateString() : '-';
+            tbody.innerHTML += `<tr><td>${dataF}</td><td>${n.clienteNome||'Cliente'}</td><td>R$ ${n.valores?.totalNota}</td><td>Emitida</td><td>-</td></tr>`;
+        });
+    }
+
+    async function carregarListaRascunhos() {
+        const tbody = document.getElementById('tabela-rascunhos-body');
+        tbody.innerHTML = '<tr><td colspan="4">Carregando...</td></tr>';
+        const s = await db.collection('rascunhos_nf').orderBy('dataEmissao', 'desc').limit(20).get();
+        tbody.innerHTML = '';
+        if(s.empty) { tbody.innerHTML = '<tr><td colspan="4">Nenhum rascunho.</td></tr>'; return; }
+        s.forEach(doc => {
+            const n = doc.data();
+            const dataF = n.dataEmissao ? new Date(n.dataEmissao).toLocaleDateString() : '-';
+            tbody.innerHTML += `<tr>
+                <td>${dataF}</td><td>${n.clienteNome}</td><td>R$ ${n.valores?.totalNota}</td>
+                <td>
+                    <button class="btn-dark" onclick="carregarRascunho('${doc.id}')">✏️</button>
+                    <button class="btn-trash" onclick="apagar('rascunhos_nf','${doc.id}')">🗑</button>
+                </td>
+            </tr>`;
+        });
+    }
+
+    async function carregarRascunho(id) {
+        if(!confirm("Carregar rascunho substituirá a tela atual.")) return;
+        const doc = await db.collection('rascunhos_nf').doc(id).get();
+        if(!doc.exists) return;
+        const n = doc.data();
+        document.getElementById('val-frete').value = n.valores.frete||0;
+        document.getElementById('emi-cliente-select').value = n.clienteDoc;
+        carrinhoProdutos = n.produtos.map(p => ({
+             id: 'recuperado', codigo: p.codigo, descricao: p.descricao, precoOriginal: parseFloat(p.valor), descontoPorc: parseFloat(p.desconto), qtd: parseFloat(p.quantidade)
+        }));
+        renderizarCarrinho();
+        mudarAba('emissao');
+    }
+
+    async function carregarListaClientes() {
+        const tbody = document.getElementById('tabela-clientes-body');
+        tbody.innerHTML = '<tr><td colspan="4">Carregando...</td></tr>';
+        const s = await db.collection('clientes').limit(50).get();
+        tbody.innerHTML = '';
+        s.forEach(doc => {
+            const c = doc.data();
+            const safe = encodeURIComponent(JSON.stringify(c));
+            tbody.innerHTML += `<tr><td>${c.nome}</td><td>${c.documento}</td><td>${c.cidade||'-'}</td>
+            <td><button class="btn-dark" onclick="abrirModal('clientes','${doc.id}','${safe}')">✎</button></td></tr>`;
+        });
+    }
+
+    async function carregarListaProdutos() {
+        const tbody = document.getElementById('tabela-produtos-body');
+        tbody.innerHTML = '<tr><td colspan="5">Carregando...</td></tr>';
+        const s = await db.collection('produtos').limit(50).get();
+        tbody.innerHTML = '';
+        s.forEach(d => {
+            const p = d.data();
+            const safe = encodeURIComponent(JSON.stringify(p));
+            tbody.innerHTML += `<tr><td>${p.codigo||''}</td><td>${p.descricao}</td><td>${p.estoque||0}</td><td>R$ ${p.precoVenda||0}</td>
+            <td><div style="display:flex; gap:5px;"><button class="btn-dark" onclick="abrirModal('produtos','${d.id}','${safe}')">✎</button><button class="btn-trash" onclick="apagar('produtos','${d.id}')">🗑</button></div></td></tr>`;
+        });
+    }
+
+    async function carregarListaFornecedores() {
+        const tbody = document.getElementById('tabela-fornecedores-body');
+        tbody.innerHTML = '<tr><td colspan="4">Carregando...</td></tr>';
+        const s = await db.collection('fornecedores').limit(20).get();
+        tbody.innerHTML = '';
+        s.forEach(d => {
+            const f = d.data();
+            const safe = encodeURIComponent(JSON.stringify(f));
+            tbody.innerHTML += `<tr><td>${f.documento}</td><td>${f.razaoSocial||f.nome}</td><td>${f.cidade||'-'}</td>
+            <td><div style="display:flex; gap:5px;"><button class="btn-dark" onclick="abrirModal('fornecedores','${d.id}','${safe}')">✎</button><button class="btn-trash" onclick="apagar('fornecedores','${d.id}')">🗑</button></div></td></tr>`;
+        });
+    }
+
+    async function carregarListaNotas() {
+        const tbody = document.getElementById('tabela-notas-body');
+        tbody.innerHTML = '<tr><td colspan="5">Carregando...</td></tr>';
+        const s = await db.collection('notas_importadas').orderBy('criadoEm', 'desc').limit(20).get();
+        tbody.innerHTML = '';
+        s.forEach(d => {
+            const n = d.data();
+            tbody.innerHTML += `<tr><td>${n.chave?.substring(0,15)}...</td><td>${n.fornecedor?.nome}</td><td>R$ ${n.vTotalNota}</td>
+            <td>${n.criadoEm ? new Date(n.criadoEm.seconds*1000).toLocaleDateString() : '-'}</td>
+            <td><button class="btn-trash" onclick="apagar('notas_importadas','${d.id}')">🗑</button></td></tr>`;
+        });
+    }
+
+    async function carregarEmpresa() {
+        try {
+            const doc = await db.collection('config').doc('minha_empresa').get();
+            if (doc.exists) {
+                const d = doc.data();
+                document.getElementById('conf-razao').value = d.razaoSocial || '';
+                document.getElementById('conf-cnpj').value = d.cnpj || '';
+                document.getElementById('conf-markup').value = d.formacaoPreco?.markup || '';
+            }
+        } catch(e) {}
+    }
+
+    // ============================================================
+    // 5. MODAIS COMPLETOS (PRODUTO, CLIENTE, FORNECEDOR)
+    // ============================================================
+    window.abrirModal = (colecao, id, dadosStr) => {
+        itemEdit = { colecao, id };
+        const dados = dadosStr ? JSON.parse(decodeURIComponent(dadosStr)) : {};
+        const div = document.getElementById('modal-campos');
+        const titulo = document.getElementById('modal-titulo');
+        const btnSalvar = document.getElementById('btn-salvar-modal');
+        btnSalvar.style.display = 'inline-block';
+        document.getElementById('modal-overlay').classList.add('mostrar');
+        
+        titulo.innerText = id ? "✏️ Editar" : "➕ Novo";
+        div.innerHTML = '';
+
+        // --- FORMULÁRIO PRODUTOS (COM MARKUP/TRIBUTAÇÃO) ---
+        if(colecao === 'produtos') {
+            const custo = parseFloat(dados.precoCusto || 0);
+            const markup = parseFloat(dados.markup || 0);
+            const venda = parseFloat(dados.precoVenda || 0);
+            const estoque = parseFloat(dados.estoque || 0);
+            const s = (val, comp) => val == comp ? 'selected' : '';
+
+            div.innerHTML = `
+                <h4 style="margin:0 0 10px 0; color:#059669; border-bottom:1px solid #eee;">Dados do Produto</h4>
+                <div class="form-row">
+                    <div class="form-col" style="max-width:100px;"><label class="form-label">Código</label><input type="text" id="edt-codigo" class="form-input" value="${dados.codigo||''}"></div>
+                    <div class="form-col"><label class="form-label">Descrição *</label><input type="text" id="edt-descricao" class="form-input" value="${dados.descricao||''}"></div>
+                    <div class="form-col" style="max-width:120px;"><label class="form-label">Tipo</label><select id="edt-tipo" class="form-select"><option value="Produto" ${s('Produto',dados.tipo)}>Produto</option><option value="Servico" ${s('Servico',dados.tipo)}>Serviço</option></select></div>
+                    <div class="form-col" style="max-width:80px;"><label class="form-label">Ativo</label><select id="edt-ativo" class="form-select"><option value="true" ${dados.ativo!==false?'selected':''}>Sim</option><option value="false" ${dados.ativo===false?'selected':''}>Não</option></select></div>
+                </div>
+                <div class="form-row">
+                    <div class="form-col"><label class="form-label">GTIN/EAN</label><input type="text" id="edt-ean" class="form-input" value="${dados.ean||''}"></div>
+                    <div class="form-col"><label class="form-label">GTIN Trib.</label><input type="text" id="edt-eanTrib" class="form-input" value="${dados.eanTrib||dados.ean||''}"></div>
+                    <div class="form-col" style="max-width:80px;"><label class="form-label">UN</label><input type="text" id="edt-unidade" class="form-input" value="${dados.unidade||'UN'}"></div>
+                </div>
+                <div class="form-row">
+                    <div class="form-col"><label class="form-label">NCM</label><input type="text" id="edt-ncm" class="form-input" value="${dados.ncm||''}"></div>
+                    <div class="form-col"><label class="form-label">CEST</label><input type="text" id="edt-cest" class="form-input" value="${dados.cest||''}"></div>
+                    <div class="form-col"><label class="form-label">CFOP Padrão</label><input type="text" id="edt-cfop" class="form-input" value="${dados.cfop||'5102'}"></div>
+                    <div class="form-col"><label class="form-label">Origem</label><select id="edt-origem" class="form-select"><option value="0" ${s('0',dados.origem)}>0 - Nacional</option><option value="1" ${s('1',dados.origem)}>1 - Imp. Direta</option></select></div>
+                </div>
+                <h4 style="margin:20px 0 10px 0; color:#059669; border-bottom:1px solid #eee;">Estoque e Precificação</h4>
+                <div class="form-row" style="background:#f0fdf4; padding:10px; border-radius:6px;">
+                    <div class="form-col"><label class="form-label">Estoque</label><input type="number" id="edt-estoque" class="form-input" value="${estoque}"></div>
+                    <div class="form-col"><label class="form-label">Custo (R$)</label><input type="number" id="edt-precoCusto" class="form-input" value="${custo}" onkeyup="calcularPrecoVenda()" step="0.01"></div>
+                    <div class="form-col"><label class="form-label">Markup (%)</label><input type="number" id="edt-markup" class="form-input" value="${markup}" onkeyup="calcularPrecoVenda()"></div>
+                    <div class="form-col"><label class="form-label">Venda (R$)</label><input type="number" id="edt-precoVenda" class="form-input" value="${venda}" step="0.01" style="font-weight:bold; color:#059669;"></div>
+                </div>
+                <h4 style="margin:20px 0 10px 0; color:#059669; border-bottom:1px solid #eee;">Tributação</h4>
+                <div class="form-row">
+                    <div class="form-col"><label class="form-label">CSOSN</label><input type="text" id="edt-csosn" class="form-input" value="${dados.csosn||'102'}"></div>
+                    <div class="form-col"><label class="form-label">CST ICMS</label><input type="text" id="edt-cstICMS" class="form-input" value="${dados.cstICMS||'00'}"></div>
+                    <div class="form-col"><label class="form-label">Aliq. ICMS (%)</label><input type="number" id="edt-aliqICMS" class="form-input" value="${dados.aliqICMS||0}"></div>
+                </div>
+                <div class="form-row">
+                    <div class="form-col"><label class="form-label">CST PIS</label><input type="text" id="edt-cstPIS" class="form-input" value="${dados.cstPIS||'07'}"></div>
+                    <div class="form-col"><label class="form-label">PIS %</label><input type="number" id="edt-aliqPIS" class="form-input" value="${dados.aliqPIS||0}"></div>
+                    <div class="form-col"><label class="form-label">CST COFINS</label><input type="text" id="edt-cstCOFINS" class="form-input" value="${dados.cstCOFINS||'07'}"></div>
+                    <div class="form-col"><label class="form-label">COFINS %</label><input type="number" id="edt-aliqCOFINS" class="form-input" value="${dados.aliqCOFINS||0}"></div>
+                </div>`;
+        }
+        // --- FORMULÁRIO CLIENTES (COMPLETO) ---
+        else if(colecao === 'clientes') {
+            const selTp = (val) => dados.tipoPessoa === val ? 'selected' : '';
+            const selInd = (val) => dados.indicadorIE == val ? 'selected' : '';
+            div.innerHTML = `
+                <h4 style="margin:0 0 10px 0; color:#059669; border-bottom:1px solid #eee;">Dados do Cliente</h4>
+                <div class="form-row">
+                    <div class="form-col"><label class="form-label">Tipo</label><select id="edt-tipoPessoa" class="form-select"><option value="J" ${selTp('J')}>Jurídica</option><option value="F" ${selTp('F')}>Física</option></select></div>
+                    <div class="form-col"><label class="form-label">CPF / CNPJ *</label><input type="text" id="edt-documento" class="form-input" value="${dados.documento||''}"></div>
+                </div>
+                <div class="form-row"><div class="form-col"><label class="form-label">Nome/Razão Social *</label><input type="text" id="edt-nome" class="form-input" value="${dados.nome||''}"></div></div>
+                <div class="form-row">
+                    <div class="form-col"><label class="form-label">IE</label><input type="text" id="edt-ie" class="form-input" value="${dados.ie||''}"></div>
+                    <div class="form-col"><label class="form-label">Ind. IE</label><select id="edt-indicadorIE" class="form-select"><option value="1" ${selInd(1)}>Contribuinte</option><option value="9" ${selInd(9)}>Não Contribuinte</option></select></div>
+                </div>
+                <div class="form-row">
+                    <div class="form-col"><label class="form-label">Email</label><input type="email" id="edt-email" class="form-input" value="${dados.email||''}"></div>
+                    <div class="form-col"><label class="form-label">Telefone</label><input type="text" id="edt-telefone" class="form-input" value="${dados.telefone||''}"></div>
+                </div>
+                <h4 style="margin:20px 0 10px 0; color:#059669; border-bottom:1px solid #eee;">Endereço</h4>
+                <div class="form-row">
+                    <div class="form-col" style="max-width:150px;"><label class="form-label">CEP</label><input type="text" id="edt-cep" class="form-input" value="${dados.cep||''}" onblur="buscarCep(this.value)"></div>
+                    <div class="form-col"><label class="form-label">Logradouro</label><input type="text" id="edt-logradouro" class="form-input" value="${dados.logradouro||''}"></div>
+                    <div class="form-col" style="max-width:100px;"><label class="form-label">Nº</label><input type="text" id="edt-numero" class="form-input" value="${dados.numero||''}"></div>
+                </div>
+                <div class="form-row">
+                    <div class="form-col"><label class="form-label">Complemento</label><input type="text" id="edt-complemento" class="form-input" value="${dados.complemento||''}"></div>
+                    <div class="form-col"><label class="form-label">Bairro</label><input type="text" id="edt-bairro" class="form-input" value="${dados.bairro||''}"></div>
+                </div>
+                <div class="form-row">
+                    <div class="form-col"><label class="form-label">Cidade</label><input type="text" id="edt-cidade" class="form-input" value="${dados.cidade||''}"></div>
+                    <div class="form-col" style="max-width:80px;"><label class="form-label">UF</label><input type="text" id="edt-uf" class="form-input" value="${dados.uf||''}"></div>
+                    <div class="form-col" style="max-width:150px;"><label class="form-label">IBGE</label><input type="text" id="edt-ibge" class="form-input" value="${dados.ibge||''}"></div>
+                </div>`;
+        }
+        // --- FORMULÁRIO FORNECEDORES (COMPLETO) ---
+        else if(colecao === 'fornecedores') {
+            div.innerHTML = `
+                <h4 style="margin:0 0 10px 0; color:#059669; border-bottom:1px solid #eee;">Dados do Fornecedor</h4>
+                <div class="form-row"><div class="form-col"><label class="form-label">Razão Social *</label><input type="text" id="edt-razaoSocial" class="form-input" value="${dados.razaoSocial||dados.nome||''}"></div></div>
+                <div class="form-row"><div class="form-col"><label class="form-label">Nome Fantasia</label><input type="text" id="edt-nomeFantasia" class="form-input" value="${dados.nomeFantasia||''}"></div></div>
+                <div class="form-row">
+                    <div class="form-col"><label class="form-label">CNPJ *</label><input type="text" id="edt-documento" class="form-input" value="${dados.documento||''}"></div>
+                    <div class="form-col"><label class="form-label">IE</label><input type="text" id="edt-ie" class="form-input" value="${dados.ie||''}"></div>
+                </div>
+                <div class="form-row">
+                    <div class="form-col"><label class="form-label">Telefone</label><input type="text" id="edt-telefone" class="form-input" value="${dados.telefone||''}"></div>
+                    <div class="form-col"><label class="form-label">Email</label><input type="email" id="edt-email" class="form-input" value="${dados.email||''}"></div>
+                </div>
+                <h4 style="margin:20px 0 10px 0; color:#059669; border-bottom:1px solid #eee;">Endereço</h4>
+                <div class="form-row">
+                    <div class="form-col" style="max-width:150px;"><label class="form-label">CEP</label><input type="text" id="edt-cep" class="form-input" value="${dados.cep||''}" onblur="buscarCep(this.value)"></div>
+                    <div class="form-col"><label class="form-label">Logradouro</label><input type="text" id="edt-logradouro" class="form-input" value="${dados.logradouro||''}"></div>
+                    <div class="form-col" style="max-width:100px;"><label class="form-label">Nº</label><input type="text" id="edt-numero" class="form-input" value="${dados.numero||''}"></div>
+                </div>
+                <div class="form-row">
+                    <div class="form-col"><label class="form-label">Complemento</label><input type="text" id="edt-complemento" class="form-input" value="${dados.complemento||''}"></div>
+                    <div class="form-col"><label class="form-label">Bairro</label><input type="text" id="edt-bairro" class="form-input" value="${dados.bairro||''}"></div>
+                </div>
+                <div class="form-row">
+                    <div class="form-col"><label class="form-label">Cidade</label><input type="text" id="edt-cidade" class="form-input" value="${dados.cidade||''}"></div>
+                    <div class="form-col" style="max-width:80px;"><label class="form-label">UF</label><input type="text" id="edt-uf" class="form-input" value="${dados.uf||''}"></div>
+                </div>`;
+        }
+    }
+
+    // Função Auxiliar de Cálculo de Venda no Modal
+    window.calcularPrecoVenda = () => {
+        const custo = parseFloat(document.getElementById('edt-precoCusto').value) || 0;
+        const markup = parseFloat(document.getElementById('edt-markup').value) || 0;
+        document.getElementById('edt-precoVenda').value = (custo * (1 + markup / 100)).toFixed(2);
+    }
+
+    // Função Auxiliar de CEP
+    window.buscarCep = async (cep) => {
+        cep = cep.replace(/\D/g, '');
+        if(cep.length === 8) {
+            try {
+                const req = await fetch(`https://viacep.com.br/ws/${cep}/json/`);
+                const json = await req.json();
+                if(!json.erro) {
+                    if(document.getElementById('edt-logradouro')) document.getElementById('edt-logradouro').value = json.logradouro;
+                    if(document.getElementById('edt-bairro')) document.getElementById('edt-bairro').value = json.bairro;
+                    if(document.getElementById('edt-cidade')) document.getElementById('edt-cidade').value = json.localidade;
+                    if(document.getElementById('edt-uf')) document.getElementById('edt-uf').value = json.uf;
+                    if(document.getElementById('edt-ibge')) document.getElementById('edt-ibge').value = json.ibge;
+                    document.getElementById('edt-numero').focus();
+                }
+            } catch(e) { console.error(e); }
+        }
+    }
+
+    window.salvarModal = async () => {
+        const payload = {};
+        document.querySelectorAll('#modal-campos input, #modal-campos select').forEach(i => {
+            if(i.id.startsWith('edt-')) {
+                const key = i.id.replace('edt-','');
+                payload[key] = (i.type === 'number' || i.id === 'edt-markup' || i.id === 'edt-aliqICMS') ? parseFloat(i.value) : i.value;
+                // Boolean fix
+                if(i.value === "true") payload[key] = true;
+                if(i.value === "false") payload[key] = false;
+            }
+        });
+
+        // Caso especial fornecedor
+        if(itemEdit.colecao === 'fornecedores' && payload['razaoSocial']) payload['razaoSocial'] = payload['razaoSocial'];
+        
+        try {
+            if (itemEdit.id) {
+                await db.collection(itemEdit.colecao).doc(itemEdit.id).update(payload);
+            } else {
+                await db.collection(itemEdit.colecao).add(payload);
+            }
+            alert('Salvo com sucesso!'); 
+            fecharModal();
+            if(itemEdit.colecao === 'produtos') carregarListaProdutos();
+            if(itemEdit.colecao === 'clientes') carregarListaClientes();
+            if(itemEdit.colecao === 'fornecedores') carregarListaFornecedores();
+        } catch(e) { console.error(e); alert("Erro ao salvar."); }
+    }    
+    
+    window.fecharModal = () => document.getElementById('modal-overlay').classList.remove('mostrar');
+
+    // ============================================================
+    // 6. DELETAR (GENÉRICO) & SALVAR EMISSÃO
+    // ============================================================
+    window.apagar = async (col, id) => { 
+        if(confirm('Tem certeza?')) { 
+            try {
+                if(col === 'rascunhos_nf') {
+                    await db.collection('rascunhos_nf').doc(id).delete();
+                    carregarListaRascunhos();
+                } else if (col === 'notas_importadas') {
+                    await db.collection('notas_importadas').doc(id).delete();
+                    carregarListaNotas();
+                } else {
+                    // Aqui pode ser via API ou direto
+                    await db.collection(col).doc(id).delete(); 
+                    if(col === 'produtos') carregarListaProdutos(); 
+                    else if(col === 'clientes') carregarListaClientes();
+                    else if(col === 'fornecedores') carregarListaFornecedores();
+                }
+                alert('Apagado!'); 
+            } catch (e) { alert("Erro ao apagar: " + e.message); }
+        } 
+    };
+
+    function montarJSONNota() {
+        const cli = document.getElementById('emi-cliente-select');
+        return {
+            clienteDoc: cli.value,
+            clienteNome: cli.options[cli.selectedIndex]?.text,
+            dataEmissao: new Date().toISOString(),
+            produtos: carrinhoProdutos.map(p => ({
+                descricao: p.descricao, codigo: p.codigo, valor: p.precoOriginal, quantidade: p.qtd, desconto: p.descontoPorc
+            })),
+            valores: {
+                totalNota: document.getElementById('lbl-total-nota').innerText.replace('R$ ',''),
+                frete: document.getElementById('val-frete').value
+            }
+        };
+    }
+
+    async function salvarRascunhoNoFirestore() {
+        if(carrinhoProdutos.length === 0) return alert("Sem produtos!");
+        const json = montarJSONNota();
+        if(!json.clienteDoc) return alert("Selecione cliente!");
+        await db.collection('rascunhos_nf').add(json);
+        alert("Rascunho salvo!"); novaNota(); 
+    }
+
+    // ============================================================
+    // 7. IMPORTAÇÃO XML AVANÇADA (CORRIGIDA)
+    // ============================================================
+    
+    // CORREÇÃO: Função que detecta fator "DZ"
+    function detectarFatorConversao(descricao, unidade) {
+        if (unidade) {
+            const u = unidade.toUpperCase().trim();
+            if (u === 'DZ') return 12; // CORREÇÃO AQUI
+            if (u === 'GR' || u === 'GROSA') return 144;
+        }
+        if (!descricao) return 1;
+        const d = descricao.toUpperCase();
+        
+        // Padrão C10, CX10...
+        const regexC = /\b(C|CX|CX\.)[\/\-\s]?(\d+)\b/; 
+        let match = d.match(regexC);
+        if (match && match[2]) return parseInt(match[2]);
+
+        // Padrão 12x400g
+        const regexX = /\b(\d+)\s*[xX]\s*\d+/;
+        match = d.match(regexX);
+        if (match && match[1]) return parseInt(match[1]);
+
+        return 1;
+    }
+
+    function tagVal(parent, tagName) { const el = parent?.getElementsByTagName(tagName)[0]; return el ? el.textContent : ""; }
+    function floatVal(parent, tagName) { return parseFloat(tagVal(parent, tagName)) || 0; }
+
+    async function processarArquivoXML(input) {
+        if (!input.files.length) return;
+        const reader = new FileReader();
+        
+        // Config Markup
+        let markupPadrao = 30;
+        try { const c = await db.collection('config').doc('minha_empresa').get(); if(c.exists) markupPadrao = c.data().formacaoPreco?.markup || 30; } catch(e){}
+
+        reader.onload = function(e) {
+            try {
+                const xmlDoc = new DOMParser().parseFromString(e.target.result, "text/xml");
+                const emit = xmlDoc.getElementsByTagName("emit")[0];
+                const total = xmlDoc.getElementsByTagName("total")[0]?.getElementsByTagName("ICMSTot")[0];
+                
+                dadosCabecalhoNota = {
+                    chave: xmlDoc.getElementsByTagName("infNFe")[0]?.getAttribute("Id")?.replace('NFe','') || 'ID',
+                    dataEmissao: new Date().toISOString(),
+                    fornecedor: { nome: tagVal(emit, "xNome"), doc: tagVal(emit, "CNPJ")||tagVal(emit, "CPF") },
+                    vTotalNota: floatVal(total, "vNF")
+                };
+                document.getElementById('xml-total-nota').innerText = `R$ ${dadosCabecalhoNota.vTotalNota.toFixed(2)}`;
+
+                const dets = xmlDoc.getElementsByTagName("det");
+                itensImportacaoCache = [];
+
+                for (let i = 0; i < dets.length; i++) {
+                    const prod = dets[i].getElementsByTagName("prod")[0];
+                    const imposto = dets[i].getElementsByTagName("imposto")[0];
+                    const desc = tagVal(prod, "xProd");
+                    const unid = tagVal(prod, "uCom");
+                    
+                    const ipiTag = imposto.getElementsByTagName("IPI")[0];
+                    const icmsTag = imposto.getElementsByTagName("ICMS")[0];
+                    let vST = 0;
+                    if(icmsTag && icmsTag.children[0]) vST = floatVal(icmsTag.children[0], "vICMSST");
+
+                    itensImportacaoCache.push({
+                        idx: i,
+                        codigo: tagVal(prod, "cProd"), ean: tagVal(prod, "cEAN"), descricao: desc, ncm: tagVal(prod, "NCM"), unidadeXml: unid,
+                        qCom: floatVal(prod, "qCom"), vUnCom: floatVal(prod, "vUnCom"), vProd: floatVal(prod, "vProd"),
+                        extras: {
+                            frete: floatVal(prod, "vFrete"), seguro: floatVal(prod, "vSeg"), outras: floatVal(prod, "vOutro"),
+                            ipi: ipiTag ? floatVal(ipiTag, "vIPI") : 0, st: vST, desconto: floatVal(prod, "vDesc")
+                        },
+                        // Chama a função com a correção DZ
+                        fator: detectarFatorConversao(desc, unid),
+                        markup: markupPadrao
+                    });
+                }
+                renderizarModalRevisao();
+                document.getElementById('modal-xml-review').style.display = 'flex';
+            } catch(err) { alert("Erro XML: "+err.message); }
+            input.value = "";
+        };
+        reader.readAsText(input.files[0]);
+    }
+
+    function renderizarModalRevisao() {
+        const tbody = document.getElementById('lista-xml-itens');
+        tbody.innerHTML = '';
+        itensImportacaoCache.forEach((item, idx) => {
+            const totExtras = item.extras.frete + item.extras.seguro + item.extras.outras + item.extras.ipi + item.extras.st - item.extras.desconto;
+            const custoTotal = item.vProd + totExtras;
+            const qtdEstoque = item.qCom * item.fator;
+            const custoUnit = custoTotal / (qtdEstoque || 1);
+            const venda = custoUnit * (1 + item.markup/100);
+
+            tbody.innerHTML += `
+                <tr style="border-bottom:1px solid #f3f4f6;">
+                    <td style="padding:8px;">${item.descricao}<br><small>Ref: ${item.codigo}</small></td>
+                    <td align="center">${item.qCom} ${item.unidadeXml}</td>
+                    <td align="center" style="background:#fff7ed;"><input type="number" value="${item.fator}" style="width:50px; text-align:center;" onchange="recalcularXML(${idx},'fator',this.value)"></td>
+                    <td align="center" style="font-weight:bold; color:#d97706;" id="cx-qtd-${idx}">${qtdEstoque}</td>
+                    <td align="right">${item.vUnCom.toFixed(2)}</td>
+                    <td align="right" style="font-size:0.8rem;">+${totExtras.toFixed(2)}</td>
+                    <td align="right" style="font-weight:bold; color:#dc2626;" id="cx-custo-${idx}">R$ ${custoUnit.toFixed(4)}</td>
+                    <td align="center"><input type="number" value="${item.markup}" style="width:50px;" onchange="recalcularXML(${idx},'markup',this.value)"> %</td>
+                    <td align="right"><input type="number" step="0.01" value="${venda.toFixed(2)}" id="cx-venda-${idx}" style="width:80px; font-weight:bold; color:#059669;" onchange="recalcularXML(${idx},'venda',this.value)"></td>
+                    <td><button style="color:red; border:none; background:none; cursor:pointer;" onclick="itensImportacaoCache.splice(${idx},1); renderizarModalRevisao();">&times;</button></td>
+                </tr>`;
+        });
+    }
+
+    function recalcularXML(idx, campo, valor) {
+        const item = itensImportacaoCache[idx];
+        const val = parseFloat(valor)||0;
+        if(campo==='fator') item.fator = val > 0 ? val : 1;
+        if(campo==='markup') item.markup = val;
+        
+        const totExtras = item.extras.frete + item.extras.seguro + item.extras.outras + item.extras.ipi + item.extras.st - item.extras.desconto;
+        const custoUnit = (item.vProd + totExtras) / (item.qCom * item.fator);
+
+        if(campo==='venda') {
+            const novoMarkup = custoUnit > 0 ? ((val / custoUnit) - 1) * 100 : 0;
+            item.markup = novoMarkup;
+        }
+
+        renderizarModalRevisao(); 
+    }
+
+    async function concluirImportacaoComCalculos() {
+        const btn = document.querySelector('#modal-xml-review button[onclick^="concluir"]');
+        btn.innerText = "Salvando..."; btn.disabled = true;
+        try {
+            const batch = db.batch();
+            const notaRef = db.collection('notas_importadas').doc();
+            batch.set(notaRef, { ...dadosCabecalhoNota, itens: itensImportacaoCache, criadoEm: firebase.firestore.FieldValue.serverTimestamp() });
+
+            for(const item of itensImportacaoCache) {
+                let ref = db.collection('produtos').doc();
+                // Tenta achar existente
+                let q = await db.collection('produtos').where('codigo','==',item.codigo).limit(1).get();
+                if(q.empty && item.ean && item.ean !== "SEM GTIN") q = await db.collection('produtos').where('ean','==',item.ean).limit(1).get();
+                
+                let estAtual = 0;
+                if(!q.empty) { ref = q.docs[0].ref; estAtual = parseFloat(q.docs[0].data().estoque||0); }
+
+                const totExtras = item.extras.frete + item.extras.seguro + item.extras.outras + item.extras.ipi + item.extras.st - item.extras.desconto;
+                const custoUnit = (item.vProd + totExtras) / (item.qCom * item.fator);
+                const venda = parseFloat(document.getElementById(`cx-venda-${item.idx}`).value);
+
+                batch.set(ref, {
+                    descricao: item.descricao, codigo: item.codigo, ean: item.ean, ncm: item.ncm,
+                    precoCusto: custoUnit, markup: item.markup, precoVenda: venda,
+                    estoque: estAtual + (item.qCom * item.fator),
+                    ultimaCompra: new Date().toISOString()
+                }, {merge:true});
+            }
+            await batch.commit();
+            alert("Importado com sucesso!");
+            document.getElementById('modal-xml-review').style.display='none';
+            carregarListaNotas();
+        } catch(e) { console.error(e); alert("Erro: "+e.message); }
+        btn.innerText = "✅ Confirmar Importação"; btn.disabled = false;
+    }
+
+    // ============================================================
+    // 8. ZONA DE PERIGO (APAGAR TUDO)
+    // ============================================================
+    async function deletarTodosProdutos() {
+        if(!confirm("⚠️ ATENÇÃO: Apagar TODOS os produtos?")) return;
+        if(prompt("Digite DELETAR para confirmar:") !== 'DELETAR') return alert("Cancelado.");
+        
+        const btn = document.getElementById('btn-del-all');
+        btn.innerText = "Apagando..."; btn.disabled = true;
+        try {
+            const snap = await db.collection('produtos').limit(400).get();
+            const batch = db.batch();
+            snap.forEach(d => batch.delete(d.ref));
+            await batch.commit();
+            alert("Lote apagado! (Se houver +400 itens, repita a operação)");
+        } catch(e) { alert("Erro: "+e.message); }
+        btn.innerText = "🗑️ APAGAR TUDO"; btn.disabled = false;
+    }
+
+    function salvarEmpresa() {
+        const dados = {
+            razaoSocial: document.getElementById('conf-razao').value,
+            cnpj: document.getElementById('conf-cnpj').value,
+            ie: document.getElementById('conf-ie').value,
+            endereco: { logradouro: document.getElementById('conf-logradouro').value, numero: document.getElementById('conf-numero').value },
+            nfe: { proxNumero: document.getElementById('conf-prox-numero').value, serie: document.getElementById('conf-serie').value, ambiente: document.getElementById('conf-ambiente').value },
+            formacaoPreco: { markup: document.getElementById('conf-markup').value }
+        };
+        db.collection('config').doc('minha_empresa').set(dados);
+        alert('Configurações salvas!');
+    }
+
+    function filtrarTabelaVisual(idInput, idTbody) {
+        const input = document.getElementById(idInput);
+        if(!input) return;
+        const filtro = input.value.toLowerCase();
+        const trs = document.getElementById(idTbody).getElementsByTagName('tr');
+        for (let i = 0; i < trs.length; i++) {
+            const texto = trs[i].textContent || trs[i].innerText;
+            trs[i].style.display = texto.toLowerCase().indexOf(filtro) > -1 ? "" : "none";
+        }
+    }
+
+    // Inicialização
+    mudarAba('emissao');
+	
+	// ============================================================
+    // NOVO: VISUALIZADOR DE JSON (PREVIEW)
+    // ============================================================
+// ============================================================
+    // 1. FUNÇÃO QUE GERA O JSON (FALTAVA ESSA PARTE)
+    // ============================================================
+    async function gerarJsonNuvemFiscalCompleto() {
+        // Verifica se as dependências existem
+        if (typeof montarJSONNota !== 'function') throw new Error("Função montarJSONNota não encontrada.");
+        if (!carrinhoProdutos || carrinhoProdutos.length === 0) throw new Error("O carrinho está vazio. Adicione produtos.");
+
+        // 1. Pega dados internos
+        const interno = montarJSONNota(); 
+        
+        if (!interno.clienteDoc) throw new Error("Selecione um Cliente.");
+
+        // Função segura para converter números e evitar erro de .toFixed
+        const safeFloat = (val) => {
+            if (!val) return 0;
+            if (typeof val === 'number') return val;
+            const n = parseFloat(String(val).replace(',', '.'));
+            return isNaN(n) ? 0 : n;
+        };
+
+        // 2. Dados do Emitente (Fallback caso não tenha config)
+        const emitente = {
+            cnpj: document.getElementById('conf-cnpj')?.value || '00000000000000',
+            nome: document.getElementById('conf-razao')?.value || 'EMPRESA TESTE',
+            ie: document.getElementById('conf-ie')?.value || '',
+            enderEmit: {
+                xLgr: document.getElementById('conf-logradouro')?.value || 'Rua',
+                nro: document.getElementById('conf-numero')?.value || '0',
+                xBairro: 'Bairro', cMun: '3550308', xMun: 'SP', UF: 'SP', CEP: '00000000', cPais: '1058', xPais: 'BRASIL'
+            },
+            CRT: '1'
+        };
+
+        const destDoc = (interno.clienteDoc || "").replace(/\D/g, '');
+        const isCNPJ = destDoc.length > 11;
+
+        // 3. Monta Itens
+        let somaProdutos = 0;
+
+        const itens = carrinhoProdutos.map((itemOriginal, index) => {
+            if(!itemOriginal) return null;
+
+            const qtd = safeFloat(itemOriginal.qtd);
+            const preco = safeFloat(itemOriginal.precoOriginal);
+            const descPerc = safeFloat(itemOriginal.descontoPorc);
+
+            const vProd = preco * qtd;
+            const vDesc = vProd * (descPerc / 100);
+            
+            somaProdutos += vProd;
+
+            return {
+                nItem: index + 1,
+                prod: {
+                    cProd: itemOriginal.codigo || 'ITEM'+(index+1),
+                    cEAN: itemOriginal.ean || "SEM GTIN",
+                    xProd: itemOriginal.descricao || "PRODUTO",
+                    NCM: itemOriginal.ncm || "00000000",
+                    CFOP: itemOriginal.cfop || "5102",
+                    uCom: itemOriginal.unidade || "UN",
+                    qCom: qtd.toFixed(4),
+                    vUnCom: preco.toFixed(10),
+                    vProd: vProd.toFixed(2),
+                    cEANTrib: "SEM GTIN",
+                    uTrib: itemOriginal.unidade || "UN",
+                    qTrib: qtd.toFixed(4),
+                    vUnTrib: preco.toFixed(10),
+                    indTot: 1,
+                    vDesc: vDesc > 0 ? vDesc.toFixed(2) : null
+                },
+                imposto: {
+                    ICMS: { ICMSSN102: { orig: itemOriginal.origem || "0", CSOSN: itemOriginal.csosn || "102" } },
+                    PIS: { PISOutr: { CST: "99", vBC: "0.00", pPIS: "0.00", vPIS: "0.00" } },
+                    COFINS: { COFINSOutr: { CST: "99", vBC: "0.00", pCOFINS: "0.00", vCOFINS: "0.00" } }
+                }
+            };
+        }).filter(i => i !== null);
+
+        // 4. Totais
+        const vFrete = safeFloat(interno.valores.frete);
+        const vTotalNota = safeFloat(interno.valores.totalNota);
+
+        // 5. Retorna JSON Final
+        return {
+            infNFe: {
+                versao: "4.00",
+                ide: {
+                    cUF: "35", cNF: Math.floor(Math.random()*99999999).toString(), natOp: interno.naturezaOp, mod: "55", serie: "1", nNF: "1",
+                    dhEmi: new Date().toISOString(), tpNF: "1", idDest: "1", cMunFG: "3550308", tpImp: "1", tpEmis: "1", cDV: "", tpAmb: "2",
+                    finNFe: "1", indFinal: "1", indPres: "1", procEmi: "0", verProc: "App 1.0"
+                },
+                emit: {
+                    CNPJ: emitente.cnpj.replace(/\D/g, ''), xNome: emitente.nome, xFant: "FANTASIA", enderEmit: emitente.enderEmit, IE: emitente.ie.replace(/\D/g, ''), CRT: emitente.CRT
+                },
+                dest: {
+                    ...(isCNPJ ? { CNPJ: destDoc } : { CPF: destDoc }),
+                    xNome: interno.clienteNome, indIEDest: "9",
+                    enderDest: { xLgr: "Rua", nro: "0", xBairro: "Bairro", cMun: "3550308", xMun: "SP", UF: "SP", CEP: "00000000", cPais: "1058", xPais: "BRASIL" }
+                },
+                det: itens,
+                total: {
+                    ICMSTot: {
+                        vBC: "0.00", vICMS: "0.00", vICMSDeson: "0.00", vFCP: "0.00", vBCST: "0.00", vST: "0.00", vFCPST: "0.00", vFCPSTRet: "0.00",
+                        vProd: somaProdutos.toFixed(2),
+                        vFrete: vFrete.toFixed(2),
+                        vSeg: "0.00", vDesc: "0.00", vII: "0.00", vIPI: "0.00", vIPIDevol: "0.00", vPIS: "0.00", vCOFINS: "0.00", vOutro: "0.00",
+                        vNF: vTotalNota.toFixed(2)
+                    }
+                },
+                transp: { modFrete: "9" },
+                pag: { detPag: [{ tPag: "01", vPag: vTotalNota.toFixed(2) }] },
+                infAdic: { infCpl: interno.infComplementares || "" }
+            }
+        };
+    }
+
+    // ============================================================
+    // 2. VISUALIZADOR DE JSON (AGORA COM SINTAXE CORRETA)
+    // ============================================================
+    window.visualizarJSON = async () => {
+        try {
+            // Chama a função acima
+            const jsonNota = await gerarJsonNuvemFiscalCompleto(); 
+            const jsonString = JSON.stringify(jsonNota, null, 4);
+
+            const overlay = document.getElementById('modal-overlay');
+            const content = document.getElementById('modal-campos');
+            const titulo = document.getElementById('modal-titulo');
+            const btnSalvar = document.getElementById('btn-salvar-modal');
+
+            titulo.innerText = "👁️ JSON Final (Padrão SEFAZ)";
+            if(btnSalvar) btnSalvar.style.display = 'none';
+
+            // ATENÇÃO: Aqui usamos crases (backticks) para o HTML
+            content.innerHTML = `
+                <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:10px;">
+                    <span style="font-size:0.85rem; color:#6b7280;">Este é o conteúdo JSON formatado.</span>
+                    <button onclick="copiarTextoJSON()" id="btn-copy-json" class="btn-outline" style="border:1px solid #d1d5db; background:#fff; cursor:pointer; font-size:0.85rem; padding: 6px 12px; border-radius:4px;">
+                        📋 Copiar Código
+                    </button>
+                </div>
+                
+                <div style="background: #1e293b; color: #a5f3fc; padding: 15px; border-radius: 8px; overflow: auto; max-height: 60vh; font-family: monospace; font-size: 0.9rem; border: 1px solid #334155;">
+                    <pre style="margin:0; white-space: pre-wrap;" id="pre-json-content">${jsonString}</pre>
+                </div>
+            `;
+
+            overlay.classList.add('mostrar');
+
+        } catch (e) {
+            alert("Erro ao gerar JSON: " + e.message);
+            console.error(e);
+        }
+    };
+
+    window.copiarTextoJSON = () => {
+        const texto = document.getElementById('pre-json-content').innerText;
+        navigator.clipboard.writeText(texto).then(() => {
+            const btn = document.getElementById('btn-copy-json');
+            btn.innerHTML = "✅ Copiado!";
+            setTimeout(() => btn.innerHTML = "📋 Copiar Código", 2000);
+        });
+    };	
+</script>
+</body>
+</html>
