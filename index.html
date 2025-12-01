@@ -1450,37 +1450,43 @@
 	// ============================================================
     // INTEGRAÇÃO REAL COM NUVEM FISCAL (VIA FIREBASE FUNCTIONS)
     // ============================================================
+// ============================================================
+    // ROTINA CORRIGIDA: ENVIO PARA NUVEM FISCAL
+    // ============================================================
     async function enviarParaNuvemFiscal() {
         const btn = document.getElementById('btn-enviar-nuvem');
         
-        // 1. Confirmação
-        if(!confirm("Deseja realmente emitir esta nota fiscal para a SEFAZ?")) return;
+        // 1. Validação Básica
+        if (carrinhoProdutos.length === 0) return alert("Erro: Adicione produtos antes de enviar.");
+        if (!document.getElementById('emi-cliente-select').value) return alert("Erro: Selecione um cliente.");
+
+        // 2. Confirmação
+        if (!confirm("Confirmar emissão da NF-e?")) return;
 
         try {
-            // 2. Bloqueia botão e dá feedback
+            // 3. Feedback Visual
             const txtOriginal = btn.innerHTML;
-            btn.innerHTML = "⏳ Enviando...";
+            btn.innerHTML = "⏳ Processando...";
             btn.disabled = true;
-            btn.style.opacity = "0.7";
 
-            // 3. Gera o JSON (usa a função segura que já criamos)
+            // 4. Gerar JSON (Aguarda a montagem)
+            console.log("Gerando JSON...");
             const jsonNFe = await gerarJsonNuvemFiscalCompleto();
+            console.log("JSON Gerado:", jsonNFe);
 
-            // 4. Chama a função no Backend (Google Cloud Functions)
+            // 5. Chamar Backend
+            console.log("Chamando Firebase Functions...");
             const chamarFuncao = firebase.functions().httpsCallable('enviarNotaNuvemFiscal');
             
-            console.log("Enviando payload:", jsonNFe); // Debug no console
-
             const resultado = await chamarFuncao({ jsonNota: jsonNFe });
             const resp = resultado.data;
 
-            // 5. Sucesso
-            console.log("Retorno Nuvem Fiscal:", resp);
-            alert(`✅ Sucesso!\n\nID da Nota: ${resp.id}\nStatus: ${resp.status}`);
+            // 6. Sucesso
+            console.log("Sucesso:", resp);
+            alert(`✅ Nota Enviada!\nID: ${resp.id}\nStatus: ${resp.status}`);
 
-            // Opcional: Salvar o retorno na coleção 'notas_emitidas' para histórico
+            // Salva no histórico
             await db.collection('notas_emitidas').add({
-                ...jsonNFe.infNFe.ide, // Dados básicos
                 clienteNome: jsonNFe.infNFe.dest.xNome,
                 valores: { totalNota: jsonNFe.infNFe.total.ICMSTot.vNF },
                 retornoAPI: resp,
@@ -1488,27 +1494,31 @@
                 status: 'ENVIADA'
             });
 
-            // Atualiza a aba de emitidas e limpa a tela
+            // Limpa e atualiza
             novaNota();
             mudarAba('emitidas');
 
         } catch (error) {
-            console.error("Erro no envio:", error);
+            console.error("ERRO FATAL:", error);
             
-            // Tenta extrair mensagem de erro detalhada
-            let msg = error.message;
-            if(error.details && error.details.error){
-                msg = JSON.stringify(error.details.error, null, 2);
+            // Tratamento de erro detalhado para o usuário
+            let mensagem = error.message;
+            if (error.details) {
+                mensagem = error.details; // Erro vindo do backend
+            } else if (error.code === 'functions/not-found') {
+                mensagem = "A função não foi encontrada no servidor. Você fez o 'firebase deploy'?";
+            } else if (error.code === 'functions/unavailable') {
+                mensagem = "Servidor indisponível ou sem internet.";
             }
-            
-            alert("❌ Erro ao enviar nota:\n" + msg);
+
+            alert("❌ Falha no Envio:\n" + mensagem);
         } finally {
-            // 6. Restaura botão
-            btn.innerHTML = "🚀 Enviar para Nuvem Fiscal";
-            btn.disabled = false;
-            btn.style.opacity = "1";
+            // 7. Restaura botão
+            if(btn) {
+                btn.innerHTML = "🚀 Enviar para Nuvem Fiscal";
+                btn.disabled = false;
+            }
         }
-    }
-</script>
+    }</script>
 </body>
 </html>
