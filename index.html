@@ -1455,100 +1455,54 @@
 	
 
 // ============================================================
-    // CORREÇÃO: ENVIO PARA NUVEM FISCAL (COM VERIFICAÇÃO DE DADOS)
-    // ============================================================
-// ============================================================
-    // CORREÇÃO FINAL: ENVIO BLINDADO (LIMPEZA DE DADOS)
-    // ============================================================
-// ============================================================
     // CORREÇÃO: ENVIO COM VALIDAÇÃO RIGOROSA
     // ============================================================
-    async function enviarParaNuvemFiscal() {
+async function enviarParaNuvemFiscal() {
         const btn = document.getElementById('btn-enviar-nuvem');
         
-        // 1. Validações Básicas
-        if (typeof carrinhoProdutos === 'undefined' || carrinhoProdutos.length === 0) {
-            return alert("O carrinho está vazio! Adicione produtos.");
-        }
-        
-        const clienteSelect = document.getElementById('emi-cliente-select');
-        if (!clienteSelect || !clienteSelect.value) {
-            return alert("Selecione um cliente antes de enviar.");
-        }
-
-        if(!confirm("Confirmar envio para a SEFAZ?")) return;
+        if (carrinhoProdutos.length === 0) return alert("Carrinho vazio!");
+        if (!document.getElementById('emi-cliente-select').value) return alert("Selecione o cliente!");
+        if (!confirm("Emitir nota?")) return;
 
         try {
-            // 2. Feedback Visual
-            if(btn) {
-                var txtOriginal = btn.innerHTML;
-                btn.innerHTML = "⏳ Gerando dados...";
-                btn.disabled = true;
-            }
+            btn.innerHTML = "⏳ Gerando...";
+            btn.disabled = true;
 
-            // 3. Gerar o JSON (Debug no Console)
-            console.log("1. Iniciando geração do JSON...");
+            // 1. Gera o JSON
+            const jsonNFe = await gerarJsonNuvemFiscalCompleto();
             
-            // Chama a função de geração
-            const jsonNFeRaw = await gerarJsonNuvemFiscalCompleto();
+            // Debug visual
+            console.log("Enviando este JSON:", jsonNFe);
 
-            // VERIFICAÇÃO CRÍTICA: O JSON foi gerado?
-            if (!jsonNFeRaw || !jsonNFeRaw.infNFe) {
-                console.error("ERRO DE GERAÇÃO:", jsonNFeRaw);
-                throw new Error("O sistema gerou um JSON inválido ou vazio. Verifique o cadastro do produto/cliente.");
-            }
+            // 2. Limpeza
+            const payload = JSON.parse(JSON.stringify(jsonNFe));
 
-            // Limpeza de dados (removendo undefined)
-            const jsonNFeLimpo = JSON.parse(JSON.stringify(jsonNFeRaw));
-            
-            console.log("2. Payload pronto para envio:", jsonNFeLimpo);
-
-            // 4. Conexão com o Backend
-            if(btn) btn.innerHTML = "⏳ Enviando...";
-            
+            // 3. Envio Direto (Backend atualizado aceita direto)
             const chamarFuncao = firebase.functions().httpsCallable('enviarNotaNuvemFiscal');
+            const resultado = await chamarFuncao(payload); 
             
-            // 5. ENVIO
-            // Importante: O backend espera receber { jsonNota: ... }
-            const resultado = await chamarFuncao({ jsonNota: jsonNFeLimpo });
             const resp = resultado.data;
-
-            // 6. Sucesso
-            console.log("3. Resposta do Servidor:", resp);
-            alert(`✅ SUCESSO!\n\nID da Nota: ${resp.id}\nStatus: ${resp.status}`);
-
-            // Salvar histórico
+            alert(`✅ Sucesso! ID: ${resp.id} - Status: ${resp.status}`);
+            
+            // Salvar...
             await db.collection('notas_emitidas').add({
-                clienteNome: jsonNFeLimpo.infNFe.dest.xNome,
-                valores: { totalNota: jsonNFeLimpo.infNFe.total.ICMSTot.vNF },
+                clienteNome: jsonNFe.infNFe.dest.xNome,
+                valores: { totalNota: jsonNFe.infNFe.total.ICMSTot.vNF },
                 retornoAPI: resp,
                 dataEmissao: firebase.firestore.FieldValue.serverTimestamp(),
                 status: 'ENVIADA'
             });
-
-            novaNota();
-            mudarAba('emitidas');
+            novaNota(); mudarAba('emitidas');
 
         } catch (error) {
-            console.error("ERRO NO PROCESSO:", error);
-            
+            console.error("ERRO:", error);
             let msg = error.message;
-            
-            // Se o erro vier do backend (Google Cloud Functions)
-            if (error.details) {
-                // Tenta pegar a mensagem interna do erro
-                msg = typeof error.details === 'object' ? JSON.stringify(error.details) : error.details;
-            }
-
-            alert("❌ Falha no Envio:\n" + msg);
+            if (error.details) msg = JSON.stringify(error.details);
+            alert("❌ Erro: " + msg);
         } finally {
-            if(btn) {
-                btn.innerHTML = "🚀 Enviar para Nuvem Fiscal";
-                btn.disabled = false;
-            }
+            if(btn) { btn.innerHTML = "🚀 Enviar para Nuvem Fiscal"; btn.disabled = false; }
         }
-    }
-	
+    }	
 </script>
 </body>
 </html>
