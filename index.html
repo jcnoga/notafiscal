@@ -493,7 +493,7 @@
       appId: "1:707495638676:web:f5372d1397a331bda32681"
    // };
    
-const firebaseConfig = {
+   const firebaseConfig = {
   apiKey: "AIzaSyD_NvFnDHGOJ6WPTAsd25fpB3QM-CFBWLg",
   authDomain: "notafiscal-ebf0b.firebaseapp.com",
   projectId: "notafiscal-ebf0b",
@@ -502,7 +502,6 @@ const firebaseConfig = {
   appId: "1:657836375668:web:8f4d62f79e4ecfe39c5b21",
   measurementId: "G-9YG62NC2H5"
 };
-
 
     if (!firebase.apps.length) firebase.initializeApp(firebaseConfig);
     const db = firebase.firestore();
@@ -1214,76 +1213,42 @@ const firebaseConfig = {
         renderizarModalRevisao(); 
     }
 
- async function concluirImportacaoComCalculos() {
+    async function concluirImportacaoComCalculos() {
         const btn = document.querySelector('#modal-xml-review button[onclick^="concluir"]');
-        if(btn) { btn.innerText = "Salvando no Banco..."; btn.disabled = true; }
-
-        console.log("1. Iniciando gravação no Firestore..."); // DEBUG
-
+        btn.innerText = "Salvando..."; btn.disabled = true;
         try {
             const batch = db.batch();
-            
-            // Cria a referência da Nota
             const notaRef = db.collection('notas_importadas').doc();
-            console.log("2. ID da nova nota gerado:", notaRef.id); // DEBUG
+            batch.set(notaRef, { ...dadosCabecalhoNota, itens: itensImportacaoCache, criadoEm: firebase.firestore.FieldValue.serverTimestamp() });
 
-            // Adiciona a nota ao lote
-            batch.set(notaRef, { 
-                ...dadosCabecalhoNota, 
-                itens: itensImportacaoCache, 
-                criadoEm: firebase.firestore.FieldValue.serverTimestamp() 
-            });
-
-            // Processa produtos
-            console.log(`3. Processando ${itensImportacaoCache.length} produtos...`); // DEBUG
-            
-            for (const item of itensImportacaoCache) {
+            for(const item of itensImportacaoCache) {
                 let ref = db.collection('produtos').doc();
-                
-                // Tenta achar produto existente (pelo código)
-                let q = await db.collection('produtos').where('codigo', '==', item.codigo).limit(1).get();
-                if (q.empty && item.ean && item.ean !== "SEM GTIN") {
-                    q = await db.collection('produtos').where('ean', '==', item.ean).limit(1).get();
-                }
+                // Tenta achar existente
+                let q = await db.collection('produtos').where('codigo','==',item.codigo).limit(1).get();
+                if(q.empty && item.ean && item.ean !== "SEM GTIN") q = await db.collection('produtos').where('ean','==',item.ean).limit(1).get();
                 
                 let estAtual = 0;
-                if (!q.empty) { 
-                    ref = q.docs[0].ref; 
-                    estAtual = parseFloat(q.docs[0].data().estoque || 0); 
-                    console.log(`   -> Produto existente encontrado: ${item.descricao}`);
-                } else {
-                    console.log(`   -> Novo produto será criado: ${item.descricao}`);
-                }
+                if(!q.empty) { ref = q.docs[0].ref; estAtual = parseFloat(q.docs[0].data().estoque||0); }
 
-                // Cálculos
                 const totExtras = item.extras.frete + item.extras.seguro + item.extras.outras + item.extras.ipi + item.extras.st - item.extras.desconto;
                 const custoUnit = (item.vProd + totExtras) / (item.qCom * item.fator);
-                const vendaInput = document.getElementById(`cx-venda-${item.idx}`); // Pega do input se existir, ou calcula
-                const venda = vendaInput ? parseFloat(vendaInput.value) : (custoUnit * (1 + item.markup/100));
+                const venda = parseFloat(document.getElementById(`cx-venda-${item.idx}`).value);
 
                 batch.set(ref, {
                     descricao: item.descricao, codigo: item.codigo, ean: item.ean, ncm: item.ncm,
                     precoCusto: custoUnit, markup: item.markup, precoVenda: venda,
                     estoque: estAtual + (item.qCom * item.fator),
                     ultimaCompra: new Date().toISOString()
-                }, { merge: true });
+                }, {merge:true});
             }
-
-            console.log("4. Enviando lote (commit) para o Firestore..."); // DEBUG
             await batch.commit();
-            console.log("5. Sucesso! Dados salvos."); // DEBUG
-            
-            alert("✅ Importado com sucesso para o Banco de Dados!");
-            document.getElementById('modal-xml-review').style.display = 'none';
+            alert("Importado com sucesso!");
+            document.getElementById('modal-xml-review').style.display='none';
             carregarListaNotas();
-
-        } catch (e) {
-            console.error("ERRO AO SALVAR:", e); // DEBUG ERRO
-            alert("Erro ao salvar no banco: " + e.message);
-        } finally {
-            if(btn) { btn.innerText = "✅ Confirmar Importação"; btn.disabled = false; }
-        }
+        } catch(e) { console.error(e); alert("Erro: "+e.message); }
+        btn.innerText = "✅ Confirmar Importação"; btn.disabled = false;
     }
+
     // ============================================================
     // 8. ZONA DE PERIGO (APAGAR TUDO)
     // ============================================================
