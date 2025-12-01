@@ -484,14 +484,14 @@
     // ============================================================
     // 1. CONFIGURAÇÃO FIREBASE
     // ============================================================
-    //const firebaseConfig = {
-    //  apiKey: "AIzaSyD7wH29Ux2_nsbVn-cEeX9oYPK9iV8lf_o",
-    //  authDomain: "jcnoga-nfe.firebaseapp.com",
-    //  projectId: "jcnoga-nfe",
-    //  storageBucket: "jcnoga-nfe.firebasestorage.app",
-    //  messagingSenderId: "707495638676",
+    const firebaseConfig = {
+      apiKey: "AIzaSyD7wH29Ux2_nsbVn-cEeX9oYPK9iV8lf_o",
+      authDomain: "jcnoga-nfe.firebaseapp.com",
+      projectId: "jcnoga-nfe",
+      storageBucket: "jcnoga-nfe.firebasestorage.app",
+      messagingSenderId: "707495638676",
       appId: "1:707495638676:web:f5372d1397a331bda32681"
-   // };
+    };
 
 
     if (!firebase.apps.length) firebase.initializeApp(firebaseConfig);
@@ -1104,26 +1104,37 @@
     function tagVal(parent, tagName) { const el = parent?.getElementsByTagName(tagName)[0]; return el ? el.textContent : ""; }
     function floatVal(parent, tagName) { return parseFloat(tagVal(parent, tagName)) || 0; }
 
+// ============================================================
+    // 7. IMPORTAÇÃO XML (CORRIGIDA)
+    // ============================================================
     async function processarArquivoXML(input) {
         if (!input.files.length) return;
         const reader = new FileReader();
         
-        // Config Markup
         let markupPadrao = 30;
-        try { const c = await db.collection('config').doc('minha_empresa').get(); if(c.exists) markupPadrao = c.data().formacaoPreco?.markup || 30; } catch(e){}
+        try { 
+            const c = await db.collection('config').doc('minha_empresa').get(); 
+            if(c.exists) markupPadrao = c.data().formacaoPreco?.markup || 30; 
+        } catch(e){}
 
         reader.onload = function(e) {
             try {
                 const xmlDoc = new DOMParser().parseFromString(e.target.result, "text/xml");
                 const emit = xmlDoc.getElementsByTagName("emit")[0];
                 const total = xmlDoc.getElementsByTagName("total")[0]?.getElementsByTagName("ICMSTot")[0];
+                const infNFe = xmlDoc.getElementsByTagName("infNFe")[0];
                 
+                // CORREÇÃO AQUI: Não use 'let' ou 'const'. Use direto a variável global.
                 dadosCabecalhoNota = {
-                    chave: xmlDoc.getElementsByTagName("infNFe")[0]?.getAttribute("Id")?.replace('NFe','') || 'ID',
+                    chave: infNFe?.getAttribute("Id")?.replace('NFe','') || 'ID',
                     dataEmissao: new Date().toISOString(),
-                    fornecedor: { nome: tagVal(emit, "xNome"), doc: tagVal(emit, "CNPJ")||tagVal(emit, "CPF") },
+                    fornecedor: { 
+                        nome: tagVal(emit, "xNome"), 
+                        doc: tagVal(emit, "CNPJ") || tagVal(emit, "CPF") 
+                    },
                     vTotalNota: floatVal(total, "vNF")
                 };
+                
                 document.getElementById('xml-total-nota').innerText = `R$ ${dadosCabecalhoNota.vTotalNota.toFixed(2)}`;
 
                 const dets = xmlDoc.getElementsByTagName("det");
@@ -1142,25 +1153,36 @@
 
                     itensImportacaoCache.push({
                         idx: i,
-                        codigo: tagVal(prod, "cProd"), ean: tagVal(prod, "cEAN"), descricao: desc, ncm: tagVal(prod, "NCM"), unidadeXml: unid,
-                        qCom: floatVal(prod, "qCom"), vUnCom: floatVal(prod, "vUnCom"), vProd: floatVal(prod, "vProd"),
+                        codigo: tagVal(prod, "cProd"), 
+                        ean: tagVal(prod, "cEAN"), 
+                        descricao: desc, 
+                        ncm: tagVal(prod, "NCM"), 
+                        unidadeXml: unid,
+                        qCom: floatVal(prod, "qCom"), 
+                        vUnCom: floatVal(prod, "vUnCom"), 
+                        vProd: floatVal(prod, "vProd"),
                         extras: {
-                            frete: floatVal(prod, "vFrete"), seguro: floatVal(prod, "vSeg"), outras: floatVal(prod, "vOutro"),
-                            ipi: ipiTag ? floatVal(ipiTag, "vIPI") : 0, st: vST, desconto: floatVal(prod, "vDesc")
+                            frete: floatVal(prod, "vFrete"), 
+                            seguro: floatVal(prod, "vSeg"), 
+                            outras: floatVal(prod, "vOutro"),
+                            ipi: ipiTag ? floatVal(ipiTag, "vIPI") : 0, 
+                            st: vST, 
+                            desconto: floatVal(prod, "vDesc")
                         },
-                        // Chama a função com a correção DZ
                         fator: detectarFatorConversao(desc, unid),
                         markup: markupPadrao
                     });
                 }
                 renderizarModalRevisao();
                 document.getElementById('modal-xml-review').style.display = 'flex';
-            } catch(err) { alert("Erro XML: "+err.message); }
+            } catch(err) { 
+                console.error(err);
+                alert("Erro XML: "+err.message); 
+            }
             input.value = "";
         };
         reader.readAsText(input.files[0]);
     }
-
     function renderizarModalRevisao() {
         const tbody = document.getElementById('lista-xml-itens');
         tbody.innerHTML = '';
