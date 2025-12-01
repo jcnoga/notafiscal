@@ -1446,6 +1446,69 @@
             setTimeout(() => btn.innerHTML = "📋 Copiar Código", 2000);
         });
     };	
+	
+	// ============================================================
+    // INTEGRAÇÃO REAL COM NUVEM FISCAL (VIA FIREBASE FUNCTIONS)
+    // ============================================================
+    async function enviarParaNuvemFiscal() {
+        const btn = document.getElementById('btn-enviar-nuvem');
+        
+        // 1. Confirmação
+        if(!confirm("Deseja realmente emitir esta nota fiscal para a SEFAZ?")) return;
+
+        try {
+            // 2. Bloqueia botão e dá feedback
+            const txtOriginal = btn.innerHTML;
+            btn.innerHTML = "⏳ Enviando...";
+            btn.disabled = true;
+            btn.style.opacity = "0.7";
+
+            // 3. Gera o JSON (usa a função segura que já criamos)
+            const jsonNFe = await gerarJsonNuvemFiscalCompleto();
+
+            // 4. Chama a função no Backend (Google Cloud Functions)
+            const chamarFuncao = firebase.functions().httpsCallable('enviarNotaNuvemFiscal');
+            
+            console.log("Enviando payload:", jsonNFe); // Debug no console
+
+            const resultado = await chamarFuncao({ jsonNota: jsonNFe });
+            const resp = resultado.data;
+
+            // 5. Sucesso
+            console.log("Retorno Nuvem Fiscal:", resp);
+            alert(`✅ Sucesso!\n\nID da Nota: ${resp.id}\nStatus: ${resp.status}`);
+
+            // Opcional: Salvar o retorno na coleção 'notas_emitidas' para histórico
+            await db.collection('notas_emitidas').add({
+                ...jsonNFe.infNFe.ide, // Dados básicos
+                clienteNome: jsonNFe.infNFe.dest.xNome,
+                valores: { totalNota: jsonNFe.infNFe.total.ICMSTot.vNF },
+                retornoAPI: resp,
+                dataEmissao: firebase.firestore.FieldValue.serverTimestamp(),
+                status: 'ENVIADA'
+            });
+
+            // Atualiza a aba de emitidas e limpa a tela
+            novaNota();
+            mudarAba('emitidas');
+
+        } catch (error) {
+            console.error("Erro no envio:", error);
+            
+            // Tenta extrair mensagem de erro detalhada
+            let msg = error.message;
+            if(error.details && error.details.error){
+                msg = JSON.stringify(error.details.error, null, 2);
+            }
+            
+            alert("❌ Erro ao enviar nota:\n" + msg);
+        } finally {
+            // 6. Restaura botão
+            btn.innerHTML = "🚀 Enviar para Nuvem Fiscal";
+            btn.disabled = false;
+            btn.style.opacity = "1";
+        }
+    }
 </script>
 </body>
 </html>
