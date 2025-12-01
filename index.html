@@ -1460,46 +1460,64 @@
 // ============================================================
     // CORREÇÃO FINAL: ENVIO BLINDADO (LIMPEZA DE DADOS)
     // ============================================================
+// ============================================================
+    // CORREÇÃO: ENVIO COM VALIDAÇÃO RIGOROSA
+    // ============================================================
     async function enviarParaNuvemFiscal() {
         const btn = document.getElementById('btn-enviar-nuvem');
         
-        // 1. Validações prévias
-        if (carrinhoProdutos.length === 0) return alert("Carrinho vazio! Adicione produtos.");
-        const cli = document.getElementById('emi-cliente-select').value;
-        if (!cli) return alert("Selecione um cliente antes de enviar.");
+        // 1. Validações Básicas
+        if (typeof carrinhoProdutos === 'undefined' || carrinhoProdutos.length === 0) {
+            return alert("O carrinho está vazio! Adicione produtos.");
+        }
+        
+        const clienteSelect = document.getElementById('emi-cliente-select');
+        if (!clienteSelect || !clienteSelect.value) {
+            return alert("Selecione um cliente antes de enviar.");
+        }
 
-        if(!confirm("Deseja realmente emitir esta nota fiscal para a SEFAZ?")) return;
+        if(!confirm("Confirmar envio para a SEFAZ?")) return;
 
         try {
             // 2. Feedback Visual
             if(btn) {
                 var txtOriginal = btn.innerHTML;
-                btn.innerHTML = "⏳ Processando...";
+                btn.innerHTML = "⏳ Gerando dados...";
                 btn.disabled = true;
             }
 
-            // 3. Gerar o JSON
-            console.log("1. Gerando JSON...");
+            // 3. Gerar o JSON (Debug no Console)
+            console.log("1. Iniciando geração do JSON...");
+            
+            // Chama a função de geração
             const jsonNFeRaw = await gerarJsonNuvemFiscalCompleto();
 
-            // --- AQUI ESTÁ O TRUQUE ---
-            // Limpa qualquer dado 'undefined' que possa quebrar o envio
+            // VERIFICAÇÃO CRÍTICA: O JSON foi gerado?
+            if (!jsonNFeRaw || !jsonNFeRaw.infNFe) {
+                console.error("ERRO DE GERAÇÃO:", jsonNFeRaw);
+                throw new Error("O sistema gerou um JSON inválido ou vazio. Verifique o cadastro do produto/cliente.");
+            }
+
+            // Limpeza de dados (removendo undefined)
             const jsonNFeLimpo = JSON.parse(JSON.stringify(jsonNFeRaw));
-            console.log("2. JSON Limpo:", jsonNFeLimpo);
+            
+            console.log("2. Payload pronto para envio:", jsonNFeLimpo);
 
             // 4. Conexão com o Backend
-            console.log("3. Enviando...");
+            if(btn) btn.innerHTML = "⏳ Enviando...";
+            
             const chamarFuncao = firebase.functions().httpsCallable('enviarNotaNuvemFiscal');
             
-            // Envia o objeto limpo dentro do pacote 'jsonNota'
+            // 5. ENVIO
+            // Importante: O backend espera receber { jsonNota: ... }
             const resultado = await chamarFuncao({ jsonNota: jsonNFeLimpo });
             const resp = resultado.data;
 
-            // 5. Sucesso
-            console.log("4. Resposta:", resp);
-            alert(`✅ Sucesso!\n\nID da Nota: ${resp.id}\nStatus: ${resp.status}`);
+            // 6. Sucesso
+            console.log("3. Resposta do Servidor:", resp);
+            alert(`✅ SUCESSO!\n\nID da Nota: ${resp.id}\nStatus: ${resp.status}`);
 
-            // Salvar no histórico
+            // Salvar histórico
             await db.collection('notas_emitidas').add({
                 clienteNome: jsonNFeLimpo.infNFe.dest.xNome,
                 valores: { totalNota: jsonNFeLimpo.infNFe.total.ICMSTot.vNF },
@@ -1512,12 +1530,14 @@
             mudarAba('emitidas');
 
         } catch (error) {
-            console.error("ERRO COMPLETO:", error);
+            console.error("ERRO NO PROCESSO:", error);
             
             let msg = error.message;
+            
+            // Se o erro vier do backend (Google Cloud Functions)
             if (error.details) {
-                // Se o erro vier do backend, mostra os detalhes
-                msg = typeof error.details === 'object' ? JSON.stringify(error.details, null, 2) : error.details;
+                // Tenta pegar a mensagem interna do erro
+                msg = typeof error.details === 'object' ? JSON.stringify(error.details) : error.details;
             }
 
             alert("❌ Falha no Envio:\n" + msg);
@@ -1527,6 +1547,8 @@
                 btn.disabled = false;
             }
         }
-    }</script>
+    }
+	
+</script>
 </body>
 </html>
