@@ -381,9 +381,12 @@
         </div>
 
         <!-- ================= ABA CONFIGURAÇÕES ================= -->
+<!-- ================= ABA CONFIGURAÇÕES (ATUALIZADA) ================= -->
         <div id="tab-config" class="tab-content hidden">
             <div class="card">
                 <div class="card-header">Configurações da Empresa</div>
+                
+                <!-- DADOS EMPRESA -->
                 <div class="form-row">
                     <div class="form-col"><label class="form-label">Razão Social</label><input type="text" id="conf-razao" class="form-input"></div>
                 </div>
@@ -395,13 +398,33 @@
                     <div class="form-col"><label class="form-label">Logradouro</label><input type="text" id="conf-logradouro" class="form-input"></div>
                     <div class="form-col" style="flex:0 0 100px;"><label class="form-label">Número</label><input type="text" id="conf-numero" class="form-input"></div>
                 </div>
+
+                <div style="border-top: 1px solid #eee; margin: 20px 0;"></div>
+
+                <!-- EMISSÃO E NFC-e (NOVOS CAMPOS) -->
+                <h4 style="color:#059669; margin-bottom:10px;">Parâmetros de Emissão (NF-e / NFC-e)</h4>
                 <div class="form-row">
                     <div class="form-col"><label class="form-label">Próx. Número NF</label><input type="number" id="conf-prox-numero" class="form-input"></div>
                     <div class="form-col"><label class="form-label">Série</label><input type="number" id="conf-serie" class="form-input"></div>
                     <div class="form-col"><label class="form-label">Ambiente</label><select id="conf-ambiente" class="form-select"><option value="2">Homologação</option><option value="1">Produção</option></select></div>
                 </div>
                 
-                <h4 style="margin: 20px 0 10px 0; border-bottom:1px solid #eee; padding-bottom:5px;">Formação de Preço</h4>
+                <div class="form-row">
+                    <div class="form-col" style="max-width: 150px;">
+                        <label class="form-label">ID do CSC (Homolog)</label>
+                        <input type="text" id="conf-csc-id" class="form-input" placeholder="Ex: 000001">
+                    </div>
+                    <div class="form-col">
+                        <label class="form-label">Código CSC (Homolog)</label>
+                        <input type="text" id="conf-csc-code" class="form-input" placeholder="Código alfanumérico fornecido pela SEFAZ">
+                    </div>
+                </div>
+
+                <div style="border-top: 1px solid #eee; margin: 20px 0;"></div>
+
+                <!-- AUTOMAÇÃO E PREÇO (NOVOS CAMPOS) -->
+                <h4 style="color:#059669; margin-bottom:10px;">Automação e Precificação</h4>
+                
                 <div class="form-row">
                     <div class="form-col" style="max-width:200px;">
                         <label class="form-label">Markup Padrão (%)</label>
@@ -409,17 +432,30 @@
                     </div>
                 </div>
 
+                <div class="form-row" style="background: #f9fafb; padding: 15px; border-radius: 6px;">
+                    <div class="form-col">
+                        <div style="display:flex; align-items:center; gap:10px; margin-bottom:10px;">
+                            <input type="checkbox" id="conf-auto-financeiro" style="width:18px; height:18px;">
+                            <label for="conf-auto-financeiro" style="cursor:pointer; font-weight:500;">Lançar contas ao emitir ou cancelar NFC-e</label>
+                        </div>
+                        <div style="display:flex; align-items:center; gap:10px;">
+                            <input type="checkbox" id="conf-auto-estoque" style="width:18px; height:18px;">
+                            <label for="conf-auto-estoque" style="cursor:pointer; font-weight:500;">Lançar estoque ao emitir ou cancelar NFC-e</label>
+                        </div>
+                    </div>
+                </div>
+
+                <br>
                 <button class="btn-save" onclick="salvarEmpresa()">💾 Salvar Configurações</button>
 
-                <!-- ZONA DE PERIGO (NOVO) -->
+                <!-- ZONA DE PERIGO -->
                 <div style="margin-top: 40px; border: 1px solid #fca5a5; background: #fef2f2; padding: 20px; border-radius: 8px;">
-                    <h4 style="margin: 0 0 10px 0; color: #991b1b;">⚠️ Zona de Perigo (Desenvolvimento)</h4>
-                    <p style="font-size: 0.9rem; color: #7f1d1d; margin-bottom: 15px;">Apagar <b>TODOS</b> os produtos. Irreversível.</p>
-                    <button id="btn-del-all" class="btn-trash" style="width: 100%; justify-content: center; background: #dc2626; color: white; height: 45px; font-weight: bold;" onclick="deletarTodosProdutos()">🗑️ Apagar Todo o Catálogo</button>
+                    <h4 style="margin: 0 0 10px 0; color: #991b1b;">⚠️ Zona de Perigo</h4>
+                    <button id="btn-del-all" class="btn-trash" style="width: 100%; justify-content: center; background: #dc2626; color: white; height: 45px; font-weight: bold;" onclick="deletarTodosProdutos()">🗑️ APAGAR TODO O CATÁLOGO</button>
                 </div>
             </div>
         </div>
-
+		
     </div> <!-- Fim Main Container -->
 
     <!-- MODAL GERAL CADASTROS (Dinâmico) -->
@@ -831,18 +867,51 @@ const firebaseConfig = {
         });
     }
 
+    // CARREGAR CONFIGURAÇÕES (ATUALIZADO COM CSC E AUTOMAÇÃO)
+    // ============================================================
     async function carregarEmpresa() {
         try {
             const doc = await db.collection('config').doc('minha_empresa').get();
             if (doc.exists) {
                 const d = doc.data();
+                
+                // Dados Básicos
                 document.getElementById('conf-razao').value = d.razaoSocial || '';
                 document.getElementById('conf-cnpj').value = d.cnpj || '';
-                document.getElementById('conf-markup').value = d.formacaoPreco?.markup || '';
-            }
-        } catch(e) {}
-    }
+                document.getElementById('conf-ie').value = d.ie || '';
+                
+                // Endereço
+                if(d.endereco) {
+                    document.getElementById('conf-logradouro').value = d.endereco.logradouro || '';
+                    document.getElementById('conf-numero').value = d.endereco.numero || '';
+                }
 
+                // NF-e / NFC-e e CSC
+                if(d.nfe) {
+                    document.getElementById('conf-prox-numero').value = d.nfe.proxNumero || '';
+                    document.getElementById('conf-serie').value = d.nfe.serie || '';
+                    document.getElementById('conf-ambiente').value = d.nfe.ambiente || '2';
+                    
+                    // Novos campos CSC
+                    document.getElementById('conf-csc-id').value = d.nfe.cscId || '';
+                    document.getElementById('conf-csc-code').value = d.nfe.cscCode || '';
+                }
+
+                // Automação e Preço
+                if(d.formacaoPreco) {
+                    document.getElementById('conf-markup').value = d.formacaoPreco.markup || '';
+                }
+                
+                // Checkboxes de Automação (Se não existir, assume false)
+                if(d.automacao) {
+                    document.getElementById('conf-auto-financeiro').checked = d.automacao.lancamentoFinanceiro === true;
+                    document.getElementById('conf-auto-estoque').checked = d.automacao.lancamentoEstoque === true;
+                }
+            }
+        } catch(e) { 
+            console.error("Erro ao carregar config:", e); 
+        }
+    }
     // ============================================================
     // 5. MODAIS COMPLETOS (PRODUTO, CLIENTE, FORNECEDOR)
     // ============================================================
@@ -1420,19 +1489,47 @@ const firebaseConfig = {
         btn.innerText = "🗑️ APAGAR TUDO"; btn.disabled = false;
     }
 
-    function salvarEmpresa() {
+    // SALVAR CONFIGURAÇÕES (ATUALIZADO)
+    // ============================================================
+    async function salvarEmpresa() {
         const dados = {
             razaoSocial: document.getElementById('conf-razao').value,
             cnpj: document.getElementById('conf-cnpj').value,
             ie: document.getElementById('conf-ie').value,
-            endereco: { logradouro: document.getElementById('conf-logradouro').value, numero: document.getElementById('conf-numero').value },
-            nfe: { proxNumero: document.getElementById('conf-prox-numero').value, serie: document.getElementById('conf-serie').value, ambiente: document.getElementById('conf-ambiente').value },
-            formacaoPreco: { markup: document.getElementById('conf-markup').value }
-        };
-        db.collection('config').doc('minha_empresa').set(dados);
-        alert('Configurações salvas!');
-    }
+            
+            endereco: { 
+                logradouro: document.getElementById('conf-logradouro').value, 
+                numero: document.getElementById('conf-numero').value 
+            },
+            
+            nfe: { 
+                proxNumero: document.getElementById('conf-prox-numero').value, 
+                serie: document.getElementById('conf-serie').value, 
+                ambiente: document.getElementById('conf-ambiente').value,
+                // Novos campos CSC salvos dentro do objeto 'nfe'
+                cscId: document.getElementById('conf-csc-id').value,
+                cscCode: document.getElementById('conf-csc-code').value
+            },
+            
+            formacaoPreco: { 
+                markup: document.getElementById('conf-markup').value 
+            },
 
+            // Novo objeto de automação
+            automacao: {
+                lancamentoFinanceiro: document.getElementById('conf-auto-financeiro').checked,
+                lancamentoEstoque: document.getElementById('conf-auto-estoque').checked
+            }
+        };
+
+        try {
+            await db.collection('config').doc('minha_empresa').set(dados, { merge: true });
+            alert('✅ Configurações salvas com sucesso!');
+        } catch (e) {
+            console.error(e);
+            alert('Erro ao salvar: ' + e.message);
+        }
+    }
     function filtrarTabelaVisual(idInput, idTbody) {
         const input = document.getElementById(idInput);
         if(!input) return;
