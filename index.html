@@ -265,7 +265,13 @@
                         </div>
 
                         <button class="btn-save" onclick="salvarRascunhoNoFirestore()">💾 Salvar Rascunho</button>
-                        <button class="btn-send-outline" onclick="enviarParaNuvemFiscal()">🚀 Enviar para Nuvem Fiscal</button>
+						<!-- O segredo é o id="btn-enviar-nuvem" -->
+                        <button id="btn-enviar-nuvem" class="btn-send-outline" onclick="enviarParaNuvemFiscal()">
+                         🚀 Enviar para Nuvem Fiscal
+                         </button>
+						
+                       <!-- <button class="btn-send-outline" onclick="enviarParaNuvemFiscal()">🚀 Enviar para Nuvem Fiscal</button> -->
+					   
                     </div>
                 </div>
             </div>
@@ -1455,6 +1461,11 @@
     // ============================================================
     async function enviarParaNuvemFiscal() {
         const btn = document.getElementById('btn-enviar-nuvem');
+		        if (!btn) {
+            console.error("ERRO: O botão de envio precisa ter id='btn-enviar-nuvem' no HTML.");
+            // Continua a execução sem animação de botão ou para aqui, dependendo da preferência.
+            // Vamos apenas definir um objeto falso para não quebrar o resto do código:
+        }
         
         // 1. Validação Básica
         if (carrinhoProdutos.length === 0) return alert("Erro: Adicione produtos antes de enviar.");
