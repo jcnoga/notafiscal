@@ -1109,35 +1109,90 @@ const firebaseConfig = {
 // ============================================================
     // 7. IMPORTAÇÃO XML (CORRIGIDA)
     // ============================================================
+// ============================================================
+    // 7. IMPORTAÇÃO XML COM VALIDAÇÃO DE CNPJ (SEGURANÇA)
+    // ============================================================
+    
+    // Funções auxiliares (caso não tenha declarado fora)
+    function detectarFatorConversao(descricao, unidade) {
+        if (unidade) {
+            const u = unidade.toUpperCase().trim();
+            if (u === 'DZ') return 12;
+            if (u === 'GR' || u === 'GROSA') return 144;
+        }
+        if (!descricao) return 1;
+        const d = descricao.toUpperCase();
+        const regexC = /\b(C|CX|CX\.)[\/\-\s]?(\d+)\b/; 
+        let match = d.match(regexC);
+        if (match && match[2]) return parseInt(match[2]);
+        const regexX = /\b(\d+)\s*[xX]\s*\d+/;
+        match = d.match(regexX);
+        if (match && match[1]) return parseInt(match[1]);
+        return 1;
+    }
+    function tagVal(parent, tagName) { const el = parent?.getElementsByTagName(tagName)[0]; return el ? el.textContent : ""; }
+    function floatVal(parent, tagName) { return parseFloat(tagVal(parent, tagName)) || 0; }
+
+    // --- FUNÇÃO PRINCIPAL ALTERADA ---
     async function processarArquivoXML(input) {
         if (!input.files.length) return;
         const reader = new FileReader();
         
+        // 1. Carrega Configurações da Empresa (CNPJ e Markup)
         let markupPadrao = 30;
+        let meuCNPJ = "";
+
         try { 
             const c = await db.collection('config').doc('minha_empresa').get(); 
-            if(c.exists) markupPadrao = c.data().formacaoPreco?.markup || 30; 
-        } catch(e){}
+            if(c.exists) {
+                const dados = c.data();
+                markupPadrao = dados.formacaoPreco?.markup || 30;
+                // Remove pontos, traços e barras do CNPJ salvo
+                meuCNPJ = (dados.cnpj || "").replace(/\D/g, '');
+            }
+        } catch(e){
+            console.error("Erro ao ler config:", e);
+        }
 
         reader.onload = function(e) {
             try {
                 const xmlDoc = new DOMParser().parseFromString(e.target.result, "text/xml");
+                
+                // 2. VALIDAÇÃO DE CNPJ (NOVO BLOCO)
+                const destNode = xmlDoc.getElementsByTagName("dest")[0];
+                if (destNode) {
+                    const cnpjXml = tagVal(destNode, "CNPJ").replace(/\D/g, '');
+                    const cpfXml  = tagVal(destNode, "CPF").replace(/\D/g, '');
+                    const docDestino = cnpjXml || cpfXml;
+
+                    // Só valida se tivermos um CNPJ configurado no sistema
+                    if (meuCNPJ && docDestino) {
+                        if (meuCNPJ !== docDestino) {
+                            alert(`⛔ IMPORTAÇÃO BLOQUEADA\n\nO Destinatário deste XML é diferente da sua empresa.\n\nCNPJ no XML: ${docDestino}\nSeu CNPJ: ${meuCNPJ}\n\nVerifique o arquivo ou suas configurações.`);
+                            input.value = ""; // Limpa o input de arquivo
+                            return; // INTERROMPE A EXECUÇÃO AQUI
+                        }
+                    } else if (!meuCNPJ) {
+                        // Opcional: Avisa se a empresa não tiver CNPJ configurado
+                        console.warn("Aviso: Sua empresa não tem CNPJ configurado em 'Configurações'. A validação de destinatário foi pulada.");
+                    }
+                }
+
+                // --- Se passou da validação, continua o processo normal ---
+
                 const emit = xmlDoc.getElementsByTagName("emit")[0];
                 const total = xmlDoc.getElementsByTagName("total")[0]?.getElementsByTagName("ICMSTot")[0];
-                const infNFe = xmlDoc.getElementsByTagName("infNFe")[0];
                 
-                // CORREÇÃO AQUI: Não use 'let' ou 'const'. Use direto a variável global.
                 dadosCabecalhoNota = {
-                    chave: infNFe?.getAttribute("Id")?.replace('NFe','') || 'ID',
+                    chave: xmlDoc.getElementsByTagName("infNFe")[0]?.getAttribute("Id")?.replace('NFe','') || 'ID',
                     dataEmissao: new Date().toISOString(),
-                    fornecedor: { 
-                        nome: tagVal(emit, "xNome"), 
-                        doc: tagVal(emit, "CNPJ") || tagVal(emit, "CPF") 
-                    },
+                    fornecedor: { nome: tagVal(emit, "xNome"), doc: tagVal(emit, "CNPJ")||tagVal(emit, "CPF") },
                     vTotalNota: floatVal(total, "vNF")
                 };
                 
-                document.getElementById('xml-total-nota').innerText = `R$ ${dadosCabecalhoNota.vTotalNota.toFixed(2)}`;
+                // Atualiza label na tela do modal
+                const lblTotal = document.getElementById('xml-total-nota');
+                if(lblTotal) lblTotal.innerText = `R$ ${dadosCabecalhoNota.vTotalNota.toFixed(2)}`;
 
                 const dets = xmlDoc.getElementsByTagName("det");
                 itensImportacaoCache = [];
@@ -1155,21 +1210,11 @@ const firebaseConfig = {
 
                     itensImportacaoCache.push({
                         idx: i,
-                        codigo: tagVal(prod, "cProd"), 
-                        ean: tagVal(prod, "cEAN"), 
-                        descricao: desc, 
-                        ncm: tagVal(prod, "NCM"), 
-                        unidadeXml: unid,
-                        qCom: floatVal(prod, "qCom"), 
-                        vUnCom: floatVal(prod, "vUnCom"), 
-                        vProd: floatVal(prod, "vProd"),
+                        codigo: tagVal(prod, "cProd"), ean: tagVal(prod, "cEAN"), descricao: desc, ncm: tagVal(prod, "NCM"), unidadeXml: unid,
+                        qCom: floatVal(prod, "qCom"), vUnCom: floatVal(prod, "vUnCom"), vProd: floatVal(prod, "vProd"),
                         extras: {
-                            frete: floatVal(prod, "vFrete"), 
-                            seguro: floatVal(prod, "vSeg"), 
-                            outras: floatVal(prod, "vOutro"),
-                            ipi: ipiTag ? floatVal(ipiTag, "vIPI") : 0, 
-                            st: vST, 
-                            desconto: floatVal(prod, "vDesc")
+                            frete: floatVal(prod, "vFrete"), seguro: floatVal(prod, "vSeg"), outras: floatVal(prod, "vOutro"),
+                            ipi: ipiTag ? floatVal(ipiTag, "vIPI") : 0, st: vST, desconto: floatVal(prod, "vDesc")
                         },
                         fator: detectarFatorConversao(desc, unid),
                         markup: markupPadrao
@@ -1177,15 +1222,15 @@ const firebaseConfig = {
                 }
                 renderizarModalRevisao();
                 document.getElementById('modal-xml-review').style.display = 'flex';
+                
             } catch(err) { 
+                alert("Erro ao ler XML: "+err.message); 
                 console.error(err);
-                alert("Erro XML: "+err.message); 
             }
             input.value = "";
         };
         reader.readAsText(input.files[0]);
-    }
-    function renderizarModalRevisao() {
+    }    function renderizarModalRevisao() {
         const tbody = document.getElementById('lista-xml-itens');
         tbody.innerHTML = '';
         itensImportacaoCache.forEach((item, idx) => {
