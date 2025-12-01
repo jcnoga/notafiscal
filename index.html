@@ -727,6 +727,9 @@ const firebaseConfig = {
     function renderizarCarrinho() {
         const tbody = document.getElementById('lista-carrinho');
         const countSpan = document.getElementById('count-items');
+		// Estado Global (Adicione/Verifique estas linhas)
+        let listaClientesCache = []; // Para guardar todos os dados dos clientes carregados
+        let clienteSelecionado = null; // Para guardar o objeto completo do cliente atual
         tbody.innerHTML = '';
         countSpan.innerText = carrinhoProdutos.length;
 
@@ -792,16 +795,37 @@ const firebaseConfig = {
     // ============================================================
     // 4. CARREGAMENTO DE DADOS (LISTAS)
     // ============================================================
-    async function popularSelectClientes() {
+async function popularSelectClientes() {
         const select = document.getElementById('emi-cliente-select');
         try {
             const snap = await db.collection('clientes').orderBy('nome').get();
+            
+            // Limpa e reseta
             select.innerHTML = '<option value="">Selecione um cliente...</option>';
+            listaClientesCache = []; // Limpa cache
+            clienteSelecionado = null;
+
             snap.forEach(doc => {
                 const c = doc.data();
-                select.innerHTML += `<option value="${c.documento}">${c.nome}</option>`;
+                // Guarda o objeto completo no cache, usando o documento como chave de busca se necessário
+                listaClientesCache.push({ ...c, id: doc.id });
+                
+                // Cria a opção no HTML
+                const opt = document.createElement('option');
+                opt.value = c.documento; // CPF ou CNPJ
+                opt.text = c.nome;
+                select.appendChild(opt);
             });
-        } catch(e) { console.error(e); }
+
+            // Adiciona o evento de mudança (Gravar o selecionado)
+            select.addEventListener('change', function() {
+                const docSelecionado = this.value;
+                // Busca os dados completos na memória
+                clienteSelecionado = listaClientesCache.find(c => c.documento === docSelecionado);
+                console.log("Cliente Selecionado:", clienteSelecionado); // Debug
+            });
+
+        } catch(e) { console.error("Erro ao carregar clientes:", e); }
     }
 
     async function carregarNotasEmitidas() {
@@ -836,18 +860,43 @@ const firebaseConfig = {
         });
     }
 
-    async function carregarRascunho(id) {
+async function carregarRascunho(id) {
         if(!confirm("Carregar rascunho substituirá a tela atual.")) return;
         const doc = await db.collection('rascunhos_nf').doc(id).get();
         if(!doc.exists) return;
         const n = doc.data();
+        
+        // Carrega dados básicos
         document.getElementById('val-frete').value = n.valores.frete||0;
-        document.getElementById('emi-cliente-select').value = n.clienteDoc;
+        
+        // Carrinho
         carrinhoProdutos = n.produtos.map(p => ({
              id: 'recuperado', codigo: p.codigo, descricao: p.descricao, precoOriginal: parseFloat(p.valor), descontoPorc: parseFloat(p.desconto), qtd: parseFloat(p.quantidade)
         }));
+
+        // --- LÓGICA DO CLIENTE ---
+        // 1. Define o valor do select
+        const select = document.getElementById('emi-cliente-select');
+        select.value = n.clienteDoc;
+        
+        // 2. Força a atualização da variável global clienteSelecionado
+        // (Caso o cache já esteja carregado)
+        if(listaClientesCache.length > 0) {
+            clienteSelecionado = listaClientesCache.find(c => c.documento === n.clienteDoc);
+        } else {
+            // Se o cache não estiver pronto (raro, mas possível), buscamos no banco
+            try {
+                const query = await db.collection('clientes').where('documento', '==', n.clienteDoc).limit(1).get();
+                if(!query.empty) {
+                    clienteSelecionado = query.docs[0].data();
+                }
+            } catch(e) { console.error(e); }
+        }
+
         renderizarCarrinho();
         mudarAba('emissao');
+        // Recarrega configurações de modelo/empresa caso tenha mudado
+        carregarDadosEmissao(); 
     }
 
     async function carregarListaClientes() {
@@ -1570,17 +1619,23 @@ async function carregarEmpresa() {
 // ============================================================
     // 1. FUNÇÃO QUE GERA O JSON (FALTAVA ESSA PARTE)
     // ============================================================
-    async function gerarJsonNuvemFiscalCompleto() {
-        // Verifica se as dependências existem
+async function gerarJsonNuvemFiscalCompleto() {
+        // Validações
         if (typeof montarJSONNota !== 'function') throw new Error("Função montarJSONNota não encontrada.");
         if (!carrinhoProdutos || carrinhoProdutos.length === 0) throw new Error("O carrinho está vazio. Adicione produtos.");
-
-        // 1. Pega dados internos
-        const interno = montarJSONNota(); 
         
-        if (!interno.clienteDoc) throw new Error("Selecione um Cliente.");
+        // Verifica se o cliente foi carregado corretamente
+        if (!clienteSelecionado) {
+            // Tenta recuperar pelo select se a variável estiver nula
+            const valSelect = document.getElementById('emi-cliente-select').value;
+            if(valSelect && listaClientesCache.length > 0) {
+                clienteSelecionado = listaClientesCache.find(c => c.documento === valSelect);
+            }
+            if(!clienteSelecionado) throw new Error("Selecione um Cliente válido (Dados completos não encontrados).");
+        }
 
-        // Função segura para converter números e evitar erro de .toFixed
+        const interno = montarJSONNota(); 
+        const modeloSelecionado = document.getElementById('emi-modelo').value || '55';
         const safeFloat = (val) => {
             if (!val) return 0;
             if (typeof val === 'number') return val;
@@ -1588,35 +1643,43 @@ async function carregarEmpresa() {
             return isNaN(n) ? 0 : n;
         };
 
-        // 2. Dados do Emitente (Fallback caso não tenha config)
+        // Dados Emitente (Lendo da Configuração)
         const emitente = {
-            cnpj: document.getElementById('conf-cnpj')?.value || '00000000000000',
-            nome: document.getElementById('conf-razao')?.value || 'EMPRESA TESTE',
+            cnpj: document.getElementById('conf-cnpj')?.value || '',
+            nome: document.getElementById('conf-razao')?.value || '',
             ie: document.getElementById('conf-ie')?.value || '',
             enderEmit: {
-                xLgr: document.getElementById('conf-logradouro')?.value || 'Rua',
-                nro: document.getElementById('conf-numero')?.value || '0',
-                xBairro: 'Bairro', cMun: '3550308', xMun: 'SP', UF: 'SP', CEP: '00000000', cPais: '1058', xPais: 'BRASIL'
+                xLgr: document.getElementById('conf-logradouro')?.value || '',
+                nro: document.getElementById('conf-numero')?.value || '',
+                xBairro: 'Bairro', // Ideal ter campo bairro na config
+                cMun: '3550308', // Ideal ter código IBGE na config
+                xMun: 'Cidade', // Ideal ter cidade na config
+                UF: 'SP',       // Ideal ter UF na config
+                CEP: '00000000',
+                cPais: '1058', xPais: 'BRASIL'
             },
-            CRT: '1'
+            CRT: '1' // 1=Simples Nacional
         };
 
-        const destDoc = (interno.clienteDoc || "").replace(/\D/g, '');
+        // Dados Destinatário (USANDO O CLIENTE SELECIONADO)
+        const destDoc = (clienteSelecionado.documento || "").replace(/\D/g, '');
         const isCNPJ = destDoc.length > 11;
+        
+        // Define indicador de IE (9 = Não contribuinte, 1 = Contribuinte, 2 = Isento)
+        // Se no cadastro salvou '9', usa '9', senão assume '9' se for PF ou vazio
+        let indIEDest = clienteSelecionado.indicadorIE || "9"; 
+        let ieDest = (clienteSelecionado.ie || "").replace(/\D/g, '');
+        if(indIEDest === "9") ieDest = null; // Não envia tag IE se for não contribuinte
 
-        // 3. Monta Itens
+        // Monta Itens
         let somaProdutos = 0;
-
         const itens = carrinhoProdutos.map((itemOriginal, index) => {
             if(!itemOriginal) return null;
-
             const qtd = safeFloat(itemOriginal.qtd);
             const preco = safeFloat(itemOriginal.precoOriginal);
             const descPerc = safeFloat(itemOriginal.descontoPorc);
-
             const vProd = preco * qtd;
             const vDesc = vProd * (descPerc / 100);
-            
             somaProdutos += vProd;
 
             return {
@@ -1646,17 +1709,21 @@ async function carregarEmpresa() {
             };
         }).filter(i => i !== null);
 
-        // 4. Totais
         const vFrete = safeFloat(interno.valores.frete);
         const vTotalNota = safeFloat(interno.valores.totalNota);
 
-        // 5. Retorna JSON Final
         return {
             infNFe: {
                 versao: "4.00",
                 ide: {
-                    cUF: "35", cNF: Math.floor(Math.random()*99999999).toString(), natOp: interno.naturezaOp, mod: "55", serie: "1", nNF: "1",
-                    dhEmi: new Date().toISOString(), tpNF: "1", idDest: "1", cMunFG: "3550308", tpImp: "1", tpEmis: "1", cDV: "", tpAmb: "2",
+                    cUF: clienteSelecionado.ibge ? clienteSelecionado.ibge.substring(0,2) : "35", // Tenta pegar UF do IBGE do cliente
+                    cNF: Math.floor(Math.random()*99999999).toString(), 
+                    natOp: interno.naturezaOp, 
+                    mod: modeloSelecionado,
+                    serie: "1", nNF: "1",
+                    dhEmi: new Date().toISOString(), tpNF: "1", idDest: "1", 
+                    cMunFG: "3550308", // Mun de quem emite
+                    tpImp: "1", tpEmis: "1", cDV: "", tpAmb: "2",
                     finNFe: "1", indFinal: "1", indPres: "1", procEmi: "0", verProc: "App 1.0"
                 },
                 emit: {
@@ -1664,8 +1731,22 @@ async function carregarEmpresa() {
                 },
                 dest: {
                     ...(isCNPJ ? { CNPJ: destDoc } : { CPF: destDoc }),
-                    xNome: interno.clienteNome, indIEDest: "9",
-                    enderDest: { xLgr: "Rua", nro: "0", xBairro: "Bairro", cMun: "3550308", xMun: "SP", UF: "SP", CEP: "00000000", cPais: "1058", xPais: "BRASIL" }
+                    xNome: clienteSelecionado.nome, // Nome correto
+                    indIEDest: indIEDest,
+                    IE: ieDest, // IE correta se houver
+                    email: clienteSelecionado.email || null, // Novo campo email
+                    enderDest: { 
+                        xLgr: clienteSelecionado.logradouro || "Não Informado", 
+                        nro: clienteSelecionado.numero || "S/N", 
+                        xCpl: clienteSelecionado.complemento || null,
+                        xBairro: clienteSelecionado.bairro || "Centro", 
+                        cMun: clienteSelecionado.ibge || "9999999", 
+                        xMun: clienteSelecionado.cidade || "Cidade", 
+                        UF: clienteSelecionado.uf || "SP", 
+                        CEP: (clienteSelecionado.cep || "").replace(/\D/g,''), 
+                        cPais: "1058", xPais: "BRASIL",
+                        fone: (clienteSelecionado.telefone || "").replace(/\D/g,'')
+                    }
                 },
                 det: itens,
                 total: {
@@ -1683,7 +1764,6 @@ async function carregarEmpresa() {
             }
         };
     }
-
     // ============================================================
     // 2. VISUALIZADOR DE JSON (AGORA COM SINTAXE CORRETA)
     // ============================================================
