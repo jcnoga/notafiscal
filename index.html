@@ -1226,7 +1226,133 @@
         renderizarModalRevisao(); 
     }
 
-concluirImportacaoComCalculos
+// ============================================================
+    // CORREÇÃO: SALVAR IMPORTAÇÃO (VERSÃO SEGURA SEM DEPENDER DO DOM)
+    // ============================================================
+    async function concluirImportacaoComCalculos() {
+        console.log("1. Botão clicado. Iniciando salvamento...");
+
+        // Tenta achar o botão de várias formas para não travar
+        let btn = document.querySelector('#modal-xml-review button.btn-save');
+        if (!btn) btn = document.querySelector('button[onclick*="concluirImportacao"]');
+        
+        let textoOriginal = "✅ Confirmar Importação";
+        if(btn) { 
+            textoOriginal = btn.innerText;
+            btn.innerText = "⏳ Salvando..."; 
+            btn.disabled = true; 
+        }
+
+        try {
+            // Validações
+            if (!db) throw new Error("Banco de dados não inicializado.");
+            if (!itensImportacaoCache || itensImportacaoCache.length === 0) throw new Error("Nenhum item para importar.");
+            if (!dadosCabecalhoNota || !dadosCabecalhoNota.fornecedor) throw new Error("Dados do cabeçalho da nota perdidos. Reimporte o XML.");
+
+            const batch = db.batch();
+            
+            // 1. SALVAR FORNECEDOR
+            // Usa ?. para evitar erro se doc for nulo
+            const docForn = dadosCabecalhoNota.fornecedor.doc || "";
+            const cnpjForn = docForn.replace(/\D/g, '');
+            
+            if (cnpjForn) {
+                const fornRef = db.collection('fornecedores').doc(cnpjForn);
+                batch.set(fornRef, {
+                    razaoSocial: dadosCabecalhoNota.fornecedor.nome || "Fornecedor Sem Nome",
+                    documento: docForn,
+                    atualizadoEm: new Date().toISOString()
+                }, { merge: true });
+            }
+
+            // 2. SALVAR A NOTA
+            const notaRef = db.collection('notas_importadas').doc();
+            batch.set(notaRef, { 
+                ...dadosCabecalhoNota, 
+                // Salva apenas um resumo dos itens para não estourar memória
+                qtdItens: itensImportacaoCache.length,
+                criadoEm: firebase.firestore.FieldValue.serverTimestamp() 
+            });
+
+            // 3. SALVAR OS PRODUTOS (Cálculo via Memória, não via HTML)
+            console.log("2. Processando produtos...");
+            
+            for (const item of itensImportacaoCache) {
+                // Garante valores numéricos
+                const qCom = parseFloat(item.qCom) || 0;
+                const vProd = parseFloat(item.vProd) || 0;
+                const fator = parseFloat(item.fator) || 1;
+                const markup = parseFloat(item.markup) || 0;
+
+                // Cálculos Matemáticos (Seguros)
+                const extras = item.extras || { frete:0, seguro:0, outras:0, ipi:0, st:0, desconto:0 };
+                const totExtras = (extras.frete||0) + (extras.seguro||0) + (extras.outras||0) + (extras.ipi||0) + (extras.st||0) - (extras.desconto||0);
+                
+                const qtdEstoqueEntrada = qCom * fator;
+                const custoTotalItem = vProd + totExtras;
+                
+                // Evita divisão por zero
+                const custoUnitario = qtdEstoqueEntrada > 0 ? (custoTotalItem / qtdEstoqueEntrada) : 0;
+                const precoVenda = custoUnitario * (1 + markup/100);
+
+                // Referência do Produto
+                let ref = db.collection('produtos').doc(); // Cria novo ID por padrão
+                let estAtual = 0;
+
+                // Tenta buscar existente
+                // Nota: Consultas await dentro de loop podem ser lentas, mas são seguras
+                if (item.codigo) {
+                    let q = await db.collection('produtos').where('codigo', '==', item.codigo).limit(1).get();
+                    if (q.empty && item.ean && item.ean !== "SEM GTIN") {
+                        q = await db.collection('produtos').where('ean', '==', item.ean).limit(1).get();
+                    }
+                    if (!q.empty) {
+                        ref = q.docs[0].ref;
+                        estAtual = parseFloat(q.docs[0].data().estoque || 0);
+                    }
+                }
+
+                batch.set(ref, {
+                    descricao: item.descricao, 
+                    codigo: item.codigo, 
+                    ean: item.ean || "", 
+                    ncm: item.ncm || "",
+                    unidade: item.unidadeXml || "UN",
+                    
+                    precoCusto: parseFloat(custoUnitario.toFixed(4)), 
+                    markup: markup, 
+                    precoVenda: parseFloat(precoVenda.toFixed(2)),
+                    
+                    estoque: estAtual + qtdEstoqueEntrada,
+                    
+                    fornecedorNome: dadosCabecalhoNota.fornecedor.nome,
+                    fornecedorDoc: docForn,
+                    ultimaCompra: new Date().toISOString()
+                }, { merge: true });
+            }
+
+            console.log("3. Enviando batch para o Firestore...");
+            await batch.commit();
+            console.log("4. Sucesso!");
+            
+            alert("✅ Importação Concluída com Sucesso!");
+            document.getElementById('modal-xml-review').style.display = 'none';
+            
+            // Atualiza Grids
+            if(typeof carregarListaNotas === 'function') carregarListaNotas();
+            if(typeof carregarListaProdutos === 'function') carregarListaProdutos(); 
+            if(typeof carregarListaFornecedores === 'function') carregarListaFornecedores();
+
+        } catch (e) {
+            console.error("ERRO CRÍTICO AO SALVAR:", e);
+            alert("❌ Erro ao salvar: " + e.message + "\n(Veja o Console F12 para detalhes)");
+        } finally {
+            if(btn) { 
+                btn.innerText = textoOriginal; 
+                btn.disabled = false; 
+            }
+        }
+    }
 
     // ============================================================
     // 8. ZONA DE PERIGO (APAGAR TUDO)
